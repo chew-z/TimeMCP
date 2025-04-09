@@ -34,13 +34,22 @@ Time conversion: 15:30 in Europe/Warsaw → 09:30 in America/New_York
 
 ## Usage
 
-### Running the Server
+### Build
 
 ```bash
-go run main.go
+go build -o ./bin/mcp-time .
 ```
 
-This will start the server and it will wait for incoming MCP requests on stdin/stdout.
+### Add to claude_desktop_config.json
+
+```json
+{                                                                                 "mcpServers": {
+  "time": {
+        "command": "/Path/To/Your/Bin/mcp-time"
+      }
+  }
+}
+```
 
 ### Using with MCP-compatible Clients
 
