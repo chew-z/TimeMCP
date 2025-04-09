@@ -12,6 +12,14 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// loadTimezone loads a timezone location, defaulting to system timezone if empty
+func loadTimezone(tzStr string) (*time.Location, error) {
+	if tzStr == "" {
+		return time.Local, nil
+	}
+	return time.LoadLocation(tzStr)
+}
+
 func main() {
 	// Create a new MCP server
 	mcpServer := server.NewMCPServer(
@@ -55,7 +63,7 @@ func main() {
 	// Start the server
 	log.Println("Starting TimeMCP server...")
 	if err := server.ServeStdio(mcpServer); err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
+		log.Printf("Error starting server: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -65,16 +73,9 @@ func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest) (*mc
 	args := request.Params.Arguments
 	timezoneStr, _ := args["timezone"].(string)
 
-	var loc *time.Location
-	var err error
-
-	if timezoneStr == "" {
-		loc = time.Local
-	} else {
-		loc, err = time.LoadLocation(timezoneStr)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Invalid timezone: %s", timezoneStr)), nil
-		}
+	loc, err := loadTimezone(timezoneStr)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Invalid timezone: %s", timezoneStr)), nil
 	}
 
 	now := time.Now().In(loc)
@@ -91,20 +92,16 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 	targetTimezoneStr, _ := args["target_timezone"].(string)
 
 	// Set source timezone
-	var sourceLoc *time.Location
-	var err error
+	sourceLoc, err := loadTimezone(sourceTimezoneStr)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Invalid source timezone: %s", sourceTimezoneStr)), nil
+	}
 	if sourceTimezoneStr == "" {
-		sourceLoc = time.Local
 		sourceTimezoneStr = sourceLoc.String()
-	} else {
-		sourceLoc, err = time.LoadLocation(sourceTimezoneStr)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Invalid source timezone: %s", sourceTimezoneStr)), nil
-		}
 	}
 
 	// Set target timezone
-	targetLoc, err := time.LoadLocation(targetTimezoneStr)
+	targetLoc, err := loadTimezone(targetTimezoneStr)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid target timezone: %s", targetTimezoneStr)), nil
 	}
