@@ -53,11 +53,13 @@ The test client demonstrates full MCP handshake and tool invocation workflow.
 ## Adding New Tools
 
 When adding new time-related tools:
-1. Add tool declaration in the `tools` slice with proper parameter schema
-2. Implement handler function following the pattern of existing handlers
-3. Register handler in the switch statement within `handleToolCall()`
-4. Update `examples/test_client.go` to test the new tool
-5. Follow the established error handling pattern with MCP-compliant responses
+1. Create tool using `mcp.NewTool()` with parameter specifications using `mcp.WithString()`, `mcp.WithNumber()`, etc.
+2. Use `mcp.Required()` for mandatory parameters and `mcp.DefaultString()` for optional ones
+3. Implement handler function with signature `func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)`
+4. Extract parameters using `req.GetString(name, default)` for optional or `req.RequireString(name)` for required parameters
+5. Register tool and handler with `mcpServer.AddTool(toolDefinition, handlerFunction)`
+6. Update `examples/test_client.go` to test the new tool
+7. Follow the established error handling pattern with MCP-compliant responses
 
 ## Testing Strategy
 

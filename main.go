@@ -70,8 +70,7 @@ func main() {
 
 // Handler for the get_current_time tool
 func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
-	timezoneStr, _ := args["timezone"].(string)
+	timezoneStr := request.GetString("timezone", "")
 
 	loc, err := loadTimezone(timezoneStr)
 	if err != nil {
@@ -86,10 +85,13 @@ func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest) (*mc
 
 // Handler for the convert_time tool
 func handleConvertTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
-	sourceTimezoneStr, _ := args["source_timezone"].(string)
-	timeStr, _ := args["time"].(string)
-	targetTimezoneStr, _ := args["target_timezone"].(string)
+	sourceTimezoneStr := request.GetString("source_timezone", "")
+	timeStr := request.GetString("time", "")
+	
+	targetTimezoneStr, err := request.RequireString("target_timezone")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 
 	// Set source timezone
 	sourceLoc, err := loadTimezone(sourceTimezoneStr)
