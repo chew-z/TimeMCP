@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -21,6 +22,39 @@ func loadTimezone(tzStr string) (*time.Location, error) {
 }
 
 func main() {
+	// Define command-line flags for configuration override
+	transportFlag := flag.String("transport", "stdio", "Transport mode: 'stdio' (default) or 'http'")
+	
+	// Authentication flags
+	authEnabledFlag := flag.Bool("auth-enabled", false, "Enable JWT authentication for HTTP transport")
+	generateTokenFlag := flag.Bool("generate-token", false, "Generate a JWT token and exit")
+	tokenUserIDFlag := flag.String("token-user-id", "user1", "User ID for token generation")
+	tokenUsernameFlag := flag.String("token-username", "admin", "Username for token generation")
+	tokenRoleFlag := flag.String("token-role", "admin", "Role for token generation")
+	tokenExpirationFlag := flag.Int("token-expiration", 744, "Token expiration in hours (default: 744 = 31 days)")
+
+	flag.Parse()
+
+	// Handle token generation if requested
+	if *generateTokenFlag {
+		secretKey := os.Getenv("TIME_AUTH_SECRET_KEY")
+		CreateTokenCommand(secretKey, *tokenUserIDFlag, *tokenUsernameFlag, *tokenRoleFlag, *tokenExpirationFlag)
+		return
+	}
+
+	// Create configuration from environment variables
+	config, err := NewConfig()
+	if err != nil {
+		log.Printf("Configuration error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Override authentication if flag is provided
+	if *authEnabledFlag {
+		config.AuthEnabled = true
+		log.Println("Authentication feature enabled via command line flag")
+	}
+
 	// Create a new MCP server
 	mcpServer := server.NewMCPServer(
 		"TimeMCP",
@@ -60,11 +94,25 @@ func main() {
 		handleConvertTime,
 	)
 
-	// Start the server
-	log.Println("Starting TimeMCP server...")
-	if err := server.ServeStdio(mcpServer); err != nil {
-		log.Printf("Error starting server: %v\n", err)
+	// Validate transport flag
+	if *transportFlag != "stdio" && *transportFlag != "http" {
+		log.Printf("Invalid transport mode: %s. Must be 'stdio' or 'http'\n", *transportFlag)
 		os.Exit(1)
+	}
+
+	// Start the appropriate transport based on command-line flag
+	if *transportFlag == "http" {
+		log.Printf("Starting TimeMCP server with HTTP transport on %s%s\n", config.HTTPAddress, config.HTTPPath)
+		if err := startHTTPServer(mcpServer, config); err != nil {
+			log.Printf("HTTP server error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		log.Println("Starting TimeMCP server with stdio transport...")
+		if err := server.ServeStdio(mcpServer); err != nil {
+			log.Printf("Error starting server: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 

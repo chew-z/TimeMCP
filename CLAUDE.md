@@ -13,31 +13,61 @@ TimeMCP is a Model Context Protocol (MCP) server that provides time and timezone
 ### Build and Run
 ```bash
 make build       # Build binary to bin/mcp-time
-make run         # Run server directly
+make run         # Run server directly (stdio transport)
 make test-client # Test server with example client
 make clean       # Remove build artifacts
 make all         # Download deps and build
 ```
 
+### Transport Options
+```bash
+# Run with stdio transport (default)
+go run . --transport=stdio
+
+# Run with HTTP transport
+go run . --transport=http
+
+# Run with HTTP transport and authentication
+go run . --transport=http --auth-enabled
+```
+
 ### Testing
 ```bash
 make test        # Run test suite
-go run examples/test_client.go  # Test with example MCP client
+go run examples/test_client.go  # Test with example MCP client (stdio only)
+
+# Test HTTP transport with curl
+curl http://localhost:8080/health
+curl http://localhost:8080/capabilities
 ```
 
-The test client demonstrates full MCP handshake and tool invocation workflow.
+The test client demonstrates full MCP handshake and tool invocation workflow for stdio transport.
 
 ## Architecture
 
 ### Core Structure
-- **Single-file implementation**: All server logic in `main.go` (appropriate for this scope)
-- **MCP Protocol**: JSON-RPC communication over stdin/stdout
+- **Modular implementation**: Main server logic in `main.go`, HTTP transport in `http_server.go`, authentication in `auth.go`, configuration in `config.go`
+- **Dual Transport Support**: Both stdio and HTTP transports
 - **Tool Handlers**: Each tool receives `mcp.CallToolRequest` and returns `mcp.CallToolResult`
 
 ### Key Dependencies
 - `github.com/mark3labs/mcp-go/mcp`: MCP protocol implementation
 - `github.com/araddon/dateparse`: Flexible date parsing
 - Standard library `time` package for timezone operations
+
+### Transport Modes
+
+#### Stdio Transport (Default)
+- JSON-RPC communication over stdin/stdout
+- Suitable for direct MCP client integration
+- No authentication required
+
+#### HTTP Transport
+- RESTful HTTP endpoints with JSON responses
+- Supports CORS for web applications
+- Optional JWT-based authentication
+- Health and capabilities endpoints
+- Graceful shutdown with signal handling
 
 ### Timezone Handling
 - Uses IANA timezone database via `time.LoadLocation()`
@@ -61,6 +91,48 @@ When adding new time-related tools:
 6. Update `examples/test_client.go` to test the new tool
 7. Follow the established error handling pattern with MCP-compliant responses
 
+## HTTP Configuration
+
+### Environment Variables
+```bash
+# HTTP Transport
+TIME_HTTP_ADDRESS=":8080"              # Server address (default: ":8080")
+TIME_HTTP_PATH="/mcp"                  # MCP endpoint path (default: "/mcp")
+TIME_HTTP_STATELESS=true              # Stateless mode (default: false)
+TIME_HTTP_HEARTBEAT="30s"             # Heartbeat interval (default: "30s")
+TIME_HTTP_TIMEOUT="30s"               # Request timeout (default: "30s")
+
+# CORS Configuration
+TIME_HTTP_CORS_ENABLED=true           # Enable CORS (default: true)
+TIME_HTTP_CORS_ORIGINS="*"            # Allowed origins (default: "*")
+
+# Authentication
+TIME_AUTH_ENABLED=true                # Enable JWT auth (default: false)
+TIME_AUTH_SECRET_KEY="your-secret-key" # JWT signing key (required if auth enabled)
+```
+
+### JWT Authentication
+
+#### Generate Token
+```bash
+# Set secret key
+export TIME_AUTH_SECRET_KEY="your-256-bit-secret-key-here"
+
+# Generate token
+go run . --generate-token --token-user-id="user123" --token-username="john" --token-role="admin"
+```
+
+#### Use Token
+```bash
+# Include in HTTP requests
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp/tools/call
+```
+
+### HTTP Endpoints
+- `GET /health` - Health check endpoint
+- `GET /capabilities` - Available tools and their schemas
+- `POST /mcp/*` - MCP protocol endpoints (tools, resources, etc.)
+
 ## Testing Strategy
 
 The project uses a comprehensive test client approach rather than unit tests. The `examples/test_client.go`:
@@ -68,3 +140,4 @@ The project uses a comprehensive test client approach rather than unit tests. Th
 - Tests both tools with realistic parameters
 - Validates JSON-RPC communication flow
 - Serves as documentation for MCP integration
+- **Note**: Currently supports stdio transport only
