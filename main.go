@@ -71,7 +71,7 @@ func main() {
 				mcp.Description("The timezone to get the current time in. If not provided, system timezone is used."),
 			),
 		),
-		handleGetCurrentTime,
+		wrapWithAuth(handleGetCurrentTime, "get_current_time", config),
 	)
 
 	// Add the convert_time tool
@@ -91,7 +91,7 @@ func main() {
 				mcp.Required(),
 			),
 		),
-		handleConvertTime,
+		wrapWithAuth(handleConvertTime, "convert_time", config),
 	)
 
 	// Validate transport flag
@@ -113,6 +113,44 @@ func main() {
 			log.Printf("Error starting server: %v\n", err)
 			os.Exit(1)
 		}
+	}
+}
+
+// wrapWithAuth wraps a tool handler with authentication and logging
+func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error), toolName string, config *Config) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		log.Printf("Calling tool '%s'...", toolName)
+
+		// Check authentication for HTTP requests if enabled
+		if httpMethod, ok := ctx.Value("http_method").(string); ok && httpMethod != "" {
+			// This is an HTTP request, check if auth is required
+			if config.AuthEnabled {
+				if authError := getAuthError(ctx); authError != "" {
+					log.Printf("Authentication failed for tool '%s': %s", toolName, authError)
+					return mcp.NewToolResultError(fmt.Sprintf("Authentication required: %s", authError)), nil
+				}
+
+				// Log successful authentication if present
+				if isAuthenticated(ctx) {
+					userID, username, role := getUserInfo(ctx)
+					log.Printf("Tool '%s' called by authenticated user %s (%s) with role %s", toolName, username, userID, role)
+				} else if config.AuthEnabled {
+					log.Printf("Authentication required for tool '%s' but not provided", toolName)
+					return mcp.NewToolResultError("Authentication required"), nil
+				}
+			}
+		}
+
+		// Call the actual handler
+		resp, err := handler(ctx, req)
+
+		if err != nil {
+			log.Printf("Tool '%s' failed: %v", toolName, err)
+		} else {
+			log.Printf("Tool '%s' completed successfully", toolName)
+		}
+
+		return resp, err
 	}
 }
 

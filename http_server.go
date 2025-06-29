@@ -99,7 +99,7 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 		fmt.Printf("Health endpoint accessed from %s\n", r.RemoteAddr)
 
 		// Create health response
-		health := map[string]interface{}{
+		health := map[string]any{
 			"status":    "healthy",
 			"service":   "TimeMCP",
 			"version":   "1.0.0",
@@ -129,15 +129,15 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 	mux.HandleFunc("/capabilities", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Capabilities endpoint accessed from %s\n", r.RemoteAddr)
 
-		capabilities := map[string]interface{}{
-			"tools": []map[string]interface{}{
+		capabilities := map[string]any{
+			"tools": []map[string]any{
 				{
 					"name":        "get_current_time",
 					"description": "Get current time in a specific timezone or system timezone.",
-					"inputSchema": map[string]interface{}{
+					"inputSchema": map[string]any{
 						"type": "object",
-						"properties": map[string]interface{}{
-							"timezone": map[string]interface{}{
+						"properties": map[string]any{
+							"timezone": map[string]any{
 								"type":        "string",
 								"description": "The timezone to get the current time in. If not provided, system timezone is used.",
 							},
@@ -147,18 +147,18 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 				{
 					"name":        "convert_time",
 					"description": "Convert time between timezones.",
-					"inputSchema": map[string]interface{}{
+					"inputSchema": map[string]any{
 						"type": "object",
-						"properties": map[string]interface{}{
-							"source_timezone": map[string]interface{}{
+						"properties": map[string]any{
+							"source_timezone": map[string]any{
 								"type":        "string",
 								"description": "Source timezone. Defaults to system timezone if not provided.",
 							},
-							"time": map[string]interface{}{
+							"time": map[string]any{
 								"type":        "string",
 								"description": "Time in 24-hour format (HH:MM). Defaults to current time if not provided.",
 							},
-							"target_timezone": map[string]interface{}{
+							"target_timezone": map[string]any{
 								"type":        "string",
 								"description": "Target timezone to convert the time to.",
 								"required":    true,
