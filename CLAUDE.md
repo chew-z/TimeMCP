@@ -95,6 +95,9 @@ When adding new time-related tools:
 
 ### Environment Variables
 ```bash
+# Timezone Configuration
+TIME_DEFAULT_TIMEZONE="UTC"           # Default timezone for operations (default: system timezone)
+
 # HTTP Transport
 TIME_HTTP_ADDRESS=":8080"              # Server address (default: ":8080")
 TIME_HTTP_PATH="/mcp"                  # MCP endpoint path (default: "/mcp")
@@ -132,6 +135,33 @@ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp/tools/call
 - `GET /health` - Health check endpoint
 - `GET /capabilities` - Available tools and their schemas
 - `POST /mcp/*` - MCP protocol endpoints (tools, resources, etc.)
+
+## Timezone Configuration Examples
+
+```bash
+# Use UTC as default timezone
+export TIME_DEFAULT_TIMEZONE="UTC"
+go run . --transport=http
+
+# Use New York timezone as default
+export TIME_DEFAULT_TIMEZONE="America/New_York"
+go run .
+
+# Use Tokyo timezone as default
+export TIME_DEFAULT_TIMEZONE="Asia/Tokyo"
+go run .
+
+# Use system timezone (default behavior)
+# Don't set TIME_DEFAULT_TIMEZONE or set it to empty
+unset TIME_DEFAULT_TIMEZONE
+go run .
+```
+
+**How it works:**
+- When `timezone` parameter is provided in tool calls, it takes precedence
+- When `timezone` parameter is empty/missing, `TIME_DEFAULT_TIMEZONE` is used
+- If `TIME_DEFAULT_TIMEZONE` is not set, system timezone is used
+- Supports all IANA timezone identifiers (e.g., "Europe/London", "Asia/Shanghai")
 
 ## Testing Strategy
 

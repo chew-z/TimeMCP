@@ -20,6 +20,9 @@ const (
 
 	// Authentication defaults
 	defaultAuthEnabled = false
+
+	// Timezone defaults
+	defaultTimezone = "" // Empty means use system timezone
 )
 
 // Config holds the server configuration
@@ -36,6 +39,9 @@ type Config struct {
 	// Authentication settings
 	AuthEnabled   bool
 	AuthSecretKey string
+
+	// Timezone settings
+	DefaultTimezone string
 }
 
 // NewConfig creates a new configuration from environment variables
@@ -76,6 +82,17 @@ func NewConfig() (*Config, error) {
 		fmt.Fprintf(os.Stderr, "[WARN] TIME_AUTH_SECRET_KEY should be at least 32 characters for security\n")
 	}
 
+	// Timezone settings
+	defaultTimezone := getEnvWithDefault("TIME_DEFAULT_TIMEZONE", defaultTimezone)
+	
+	// Validate timezone if provided
+	if defaultTimezone != "" {
+		if _, err := time.LoadLocation(defaultTimezone); err != nil {
+			return nil, fmt.Errorf("invalid TIME_DEFAULT_TIMEZONE: %s (%v)", defaultTimezone, err)
+		}
+		fmt.Fprintf(os.Stderr, "[INFO] Using default timezone: %s\n", defaultTimezone)
+	}
+
 	return &Config{
 		HTTPAddress:     httpAddress,
 		HTTPPath:        httpPath,
@@ -86,6 +103,7 @@ func NewConfig() (*Config, error) {
 		HTTPCORSOrigins: httpCORSOrigins,
 		AuthEnabled:     authEnabled,
 		AuthSecretKey:   authSecretKey,
+		DefaultTimezone: defaultTimezone,
 	}, nil
 }
 

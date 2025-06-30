@@ -13,9 +13,14 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// loadTimezone loads a timezone location, defaulting to system timezone if empty
-func loadTimezone(tzStr string) (*time.Location, error) {
+// loadTimezone loads a timezone location, using config default or system timezone if empty
+func loadTimezone(tzStr string, config *Config) (*time.Location, error) {
 	if tzStr == "" {
+		// Use default timezone from config if available
+		if config.DefaultTimezone != "" {
+			return time.LoadLocation(config.DefaultTimezone)
+		}
+		// Fall back to system timezone
 		return time.Local, nil
 	}
 	return time.LoadLocation(tzStr)
@@ -117,7 +122,7 @@ func main() {
 }
 
 // wrapWithAuth wraps a tool handler with authentication and logging
-func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error), toolName string, config *Config) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error), toolName string, config *Config) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		log.Printf("Calling tool '%s'...", toolName)
 
@@ -142,7 +147,7 @@ func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest) (*mcp.CallT
 		}
 
 		// Call the actual handler
-		resp, err := handler(ctx, req)
+		resp, err := handler(ctx, req, config)
 
 		if err != nil {
 			log.Printf("Tool '%s' failed: %v", toolName, err)
@@ -155,10 +160,10 @@ func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest) (*mcp.CallT
 }
 
 // Handler for the get_current_time tool
-func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest, config *Config) (*mcp.CallToolResult, error) {
 	timezoneStr := request.GetString("timezone", "")
 
-	loc, err := loadTimezone(timezoneStr)
+	loc, err := loadTimezone(timezoneStr, config)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid timezone: %s", timezoneStr)), nil
 	}
@@ -170,7 +175,7 @@ func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest) (*mc
 }
 
 // Handler for the convert_time tool
-func handleConvertTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config *Config) (*mcp.CallToolResult, error) {
 	sourceTimezoneStr := request.GetString("source_timezone", "")
 	timeStr := request.GetString("time", "")
 	
@@ -180,7 +185,7 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 	}
 
 	// Set source timezone
-	sourceLoc, err := loadTimezone(sourceTimezoneStr)
+	sourceLoc, err := loadTimezone(sourceTimezoneStr, config)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid source timezone: %s", sourceTimezoneStr)), nil
 	}
@@ -189,7 +194,7 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 	}
 
 	// Set target timezone
-	targetLoc, err := loadTimezone(targetTimezoneStr)
+	targetLoc, err := loadTimezone(targetTimezoneStr, config)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid target timezone: %s", targetTimezoneStr)), nil
 	}
