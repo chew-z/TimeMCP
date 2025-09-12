@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -104,11 +104,11 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 		log.Printf("Health endpoint accessed from %s\n", r.RemoteAddr)
 
 		// Create health response
-	health := map[string]any{
+		health := map[string]any{
 			"status":    "healthy",
 			"service":   "TimeMCP",
 			"version":   "1.0.0",
-			"timestamp": fmt.Sprintf("%d", r.Context().Value("timestamp")),
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -208,6 +208,18 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 					return
 				}
 			}
+
+			// Add CORS headers for actual MCP responses
+			if config.HTTPCORSEnabled {
+				origin := r.Header.Get("Origin")
+				if origin != "" && isOriginAllowed(origin, config.HTTPCORSOrigins) {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Vary", "Origin")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				}
+			}
+
 			// Pass to MCP handler for all other requests
 			mcpHandler.ServeHTTP(w, r)
 		})

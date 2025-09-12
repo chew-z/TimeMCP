@@ -39,16 +39,16 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name          string
-		authHeader    string
-		expectedAuth  bool
-		expectedError string
+		name           string
+		authHeader     string
+		expectedAuth   bool
+		expectedError  string
 		expectedUserID string
 	}{
 		{
-			name:          "Valid Token",
-			authHeader:    "Bearer " + validToken,
-			expectedAuth:  true,
+			name:           "Valid Token",
+			authHeader:     "Bearer " + validToken,
+			expectedAuth:   true,
 			expectedUserID: "1",
 		},
 		{
@@ -115,18 +115,18 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Errorf("Expected userID to be '%s', but got '%s'", tc.expectedUserID, userID)
 			}
 
-				if tc.expectedAuth {
-					_, username, role := getUserInfo(ctx)
-					if username != "testuser" {
-						t.Errorf("Expected username to be 'testuser', but got '%s'", username)
-					}
-					if role != "user" {
-						t.Errorf("Expected role to be 'user', but got '%s'", role)
-					}
+			if tc.expectedAuth {
+				_, username, role := getUserInfo(ctx)
+				if username != "testuser" {
+					t.Errorf("Expected username to be 'testuser', but got '%s'", username)
 				}
-			})
-		}
+				if role != "user" {
+					t.Errorf("Expected role to be 'user', but got '%s'", role)
+				}
+			}
+		})
 	}
+}
 
 func TestAuthMiddleware_Disabled(t *testing.T) {
 	secret := "test-secret"
@@ -154,7 +154,6 @@ func TestAuthMiddleware_Disabled(t *testing.T) {
 		t.Error("Expected auth error to be empty when auth is disabled")
 	}
 }
-
 
 func TestGenerateAndValidateToken(t *testing.T) {
 	secret := "test-secret"

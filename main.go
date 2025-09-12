@@ -13,6 +13,11 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// AddToolWithAuth is a helper function to add tools with authentication wrapper
+func AddToolWithAuth(s *server.MCPServer, tool mcp.Tool, toolName string, cfg *Config, handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error)) {
+	s.AddTool(tool, wrapWithAuth(handler, toolName, cfg))
+}
+
 // loadTimezone loads a timezone location, using config default or system timezone if empty
 func loadTimezone(tzStr string, config *Config) (*time.Location, error) {
 	if tzStr == "" {
@@ -69,18 +74,18 @@ func main() {
 	)
 
 	// Add the get_current_time tool
-	mcpServer.AddTool(
+	AddToolWithAuth(mcpServer,
 		mcp.NewTool("get_current_time",
 			mcp.WithDescription("Get current time in a specific timezone or system timezone."),
 			mcp.WithString("timezone",
 				mcp.Description("The timezone to get the current time in. If not provided, system timezone is used."),
 			),
 		),
-		wrapWithAuth(handleGetCurrentTime, "get_current_time", config),
+		"get_current_time", config, handleGetCurrentTime,
 	)
 
 	// Add the convert_time tool
-	mcpServer.AddTool(
+	AddToolWithAuth(mcpServer,
 		mcp.NewTool("convert_time",
 			mcp.WithDescription("Convert time between timezones."),
 			mcp.WithString("source_timezone",
@@ -96,7 +101,7 @@ func main() {
 				mcp.Required(),
 			),
 		),
-		wrapWithAuth(handleConvertTime, "convert_time", config),
+		"convert_time", config, handleConvertTime,
 	)
 
 	// Validate transport flag

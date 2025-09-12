@@ -136,6 +136,33 @@ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp/tools/call
 - `GET /capabilities` - Available tools and their schemas
 - `POST /mcp/*` - MCP protocol endpoints (tools, resources, etc.)
 
+### CORS Security Configuration
+
+⚠️ **Security Warning**: The default CORS configuration (`TIME_HTTP_CORS_ORIGINS="*"`) allows requests from any origin, which poses security risks when JWT authentication is enabled.
+
+#### Recommended CORS Settings
+
+**For Production:**
+```bash
+# Restrict to specific domains
+TIME_HTTP_CORS_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
+
+# Or disable CORS entirely for server-to-server communication
+TIME_HTTP_CORS_ENABLED=false
+```
+
+**For Development:**
+```bash
+# Allow localhost for development
+TIME_HTTP_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
+```
+
+**Security Implications:**
+- `TIME_HTTP_CORS_ORIGINS="*"` allows any website to make requests to your TimeMCP server
+- If JWT tokens are accessible to browser JavaScript, malicious sites could potentially use them
+- Always use specific origins in production environments
+- Consider using `TIME_HTTP_CORS_ENABLED=false` for server-to-server deployments
+
 ## Timezone Configuration Examples
 
 ```bash
