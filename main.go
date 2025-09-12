@@ -29,7 +29,7 @@ func loadTimezone(tzStr string, config *Config) (*time.Location, error) {
 func main() {
 	// Define command-line flags for configuration override
 	transportFlag := flag.String("transport", "stdio", "Transport mode: 'stdio' (default) or 'http'")
-	
+
 	// Authentication flags
 	authEnabledFlag := flag.Bool("auth-enabled", false, "Enable JWT authentication for HTTP transport")
 	generateTokenFlag := flag.Bool("generate-token", false, "Generate a JWT token and exit")
@@ -72,7 +72,7 @@ func main() {
 	mcpServer.AddTool(
 		mcp.NewTool("get_current_time",
 			mcp.WithDescription("Get current time in a specific timezone or system timezone."),
-			mcp.WithString("timezone", 
+			mcp.WithString("timezone",
 				mcp.Description("The timezone to get the current time in. If not provided, system timezone is used."),
 			),
 		),
@@ -83,15 +83,15 @@ func main() {
 	mcpServer.AddTool(
 		mcp.NewTool("convert_time",
 			mcp.WithDescription("Convert time between timezones."),
-			mcp.WithString("source_timezone", 
+			mcp.WithString("source_timezone",
 				mcp.Description("Source timezone. Defaults to system timezone if not provided."),
 				mcp.DefaultString(""),
 			),
-			mcp.WithString("time", 
+			mcp.WithString("time",
 				mcp.Description("Time in 24-hour format (HH:MM). Defaults to current time if not provided."),
 				mcp.DefaultString(""),
 			),
-			mcp.WithString("target_timezone", 
+			mcp.WithString("target_timezone",
 				mcp.Description("Target timezone to convert the time to."),
 				mcp.Required(),
 			),
@@ -170,7 +170,7 @@ func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest, conf
 
 	now := time.Now().In(loc)
 	response := fmt.Sprintf("Current time in %s: %s", loc.String(), now.Format("2006-01-02 15:04:05"))
-	
+
 	return mcp.NewToolResultText(response), nil
 }
 
@@ -178,7 +178,7 @@ func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest, conf
 func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config *Config) (*mcp.CallToolResult, error) {
 	sourceTimezoneStr := request.GetString("source_timezone", "")
 	timeStr := request.GetString("time", "")
-	
+
 	targetTimezoneStr, err := request.RequireString("target_timezone")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -209,7 +209,7 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config 
 		// We'll construct a full datetime string with today's date
 		today := time.Now().In(sourceLoc).Format("2006-01-02")
 		fullTimeStr := fmt.Sprintf("%s %s", today, timeStr)
-		
+
 		sourceTime, err = dateparse.ParseIn(fullTimeStr, sourceLoc)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Invalid time format: %s. Please provide time in HH:MM format.", timeStr)), nil
@@ -218,7 +218,7 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config 
 
 	// Convert to target timezone
 	targetTime := sourceTime.In(targetLoc)
-	
+
 	response := fmt.Sprintf(
 		"Time conversion: %s in %s → %s in %s",
 		sourceTime.Format("15:04"),
@@ -226,6 +226,6 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config 
 		targetTime.Format("15:04"),
 		targetTimezoneStr,
 	)
-	
+
 	return mcp.NewToolResultText(response), nil
 }

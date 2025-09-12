@@ -84,7 +84,7 @@ func NewConfig() (*Config, error) {
 
 	// Timezone settings
 	defaultTimezone := getEnvWithDefault("TIME_DEFAULT_TIMEZONE", defaultTimezone)
-	
+
 	// Validate timezone if provided
 	if defaultTimezone != "" {
 		if _, err := time.LoadLocation(defaultTimezone); err != nil {

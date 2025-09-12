@@ -171,3 +171,9 @@ The project uses a comprehensive test client approach rather than unit tests. Th
 - Validates JSON-RPC communication flow
 - Serves as documentation for MCP integration
 - **Note**: Currently supports stdio transport only
+
+## Further Instructions
+
+@./GOLANG.md
+@./CODANNA.md
+@./USING-GODOC.md

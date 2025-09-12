@@ -21,6 +21,7 @@ repomix-output.xml
 .codex/**
 .gemini/**
 .vscode/**
+reports/**
 
 .mcp.json
 
