@@ -33,3 +33,6 @@ run_*.sh
 run_format.sh
 run_lint.sh
 run_tests.sh
+
+Release Notes.md
+CLAUDE.md
