@@ -1,14 +1,34 @@
-# Binaries for programs and plugins
-bin/
-
-.claude/
-.gemini/
-.repomix/
-.vscode/
-
-# OS specific files
 .DS_Store
 
+go.sum
+bin/**
+
+.env
+
+test_*
+
+AGENT.md
+GOLANG.md
+USING-GODOC.md
+CODANNA.md
+
+.repomix/
+repomix.config.json
+repomix-output.xml
+
 .aider*
-system_prompt.txt
-CONVENTIONS.md
+.claude/**
+.codex/**
+.gemini/**
+.vscode/**
+
+.mcp.json
+
+.codanna/**
+.codannaignore
+.fastembed_cache/**
+
+run_*.sh
+run_format.sh
+run_lint.sh
+run_tests.sh
