@@ -11,7 +11,10 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 	secret := "test-secret"
-	auth := NewAuthMiddleware(secret, true)
+	auth, err := NewAuthMiddleware(secret, true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
 
 	// Generate a valid token
 	validToken, err := auth.GenerateToken("1", "testuser", "user", 1)
@@ -26,7 +29,10 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	// Generate a token with a different secret
-	auth2 := NewAuthMiddleware("different-secret", true)
+	auth2, err := NewAuthMiddleware("different-secret", true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
 	invalidSecretToken, err := auth2.GenerateToken("1", "testuser", "user", 1)
 	if err != nil {
 		t.Fatalf("Failed to generate token: %v", err)
@@ -46,28 +52,34 @@ func TestAuthMiddleware(t *testing.T) {
 			expectedUserID: "1",
 		},
 		{
+			name:          "Non-Bearer Scheme",
+			authHeader:    "Basic " + validToken,
+			expectedAuth:  false,
+			expectedError: authErrorMissingToken,
+		},
+		{
 			name:          "Invalid Token - Wrong Secret",
 			authHeader:    "Bearer " + invalidSecretToken,
 			expectedAuth:  false,
-			expectedError: "invalid_token",
+			expectedError: authErrorInvalidToken,
 		},
 		{
 			name:          "Expired Token",
 			authHeader:    "Bearer " + expiredToken,
 			expectedAuth:  false,
-			expectedError: "expired_token",
+			expectedError: authErrorExpiredToken,
 		},
 		{
 			name:          "Missing Token",
 			authHeader:    "",
 			expectedAuth:  false,
-			expectedError: "missing_token",
+			expectedError: authErrorMissingToken,
 		},
 		{
 			name:          "Malformed Bearer",
 			authHeader:    "Bearer" + validToken, // No space
 			expectedAuth:  false,
-			expectedError: "missing_token",
+			expectedError: authErrorMissingToken,
 		},
 	}
 
@@ -102,14 +114,27 @@ func TestAuthMiddleware(t *testing.T) {
 			if authenticated && userID != tc.expectedUserID {
 				t.Errorf("Expected userID to be '%s', but got '%s'", tc.expectedUserID, userID)
 			}
-		})
+
+				if tc.expectedAuth {
+					_, username, role := getUserInfo(ctx)
+					if username != "testuser" {
+						t.Errorf("Expected username to be 'testuser', but got '%s'", username)
+					}
+					if role != "user" {
+						t.Errorf("Expected role to be 'user', but got '%s'", role)
+					}
+				}
+			})
+		}
 	}
-}
 
 func TestAuthMiddleware_Disabled(t *testing.T) {
 	secret := "test-secret"
 	// Auth middleware is disabled
-	auth := NewAuthMiddleware(secret, false)
+	auth, err := NewAuthMiddleware(secret, false, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
 
 	req, _ := http.NewRequest("GET", "/", nil)
 	// Even with a valid token, auth should be skipped
@@ -133,7 +158,10 @@ func TestAuthMiddleware_Disabled(t *testing.T) {
 
 func TestGenerateAndValidateToken(t *testing.T) {
 	secret := "test-secret"
-	auth := NewAuthMiddleware(secret, true)
+	auth, err := NewAuthMiddleware(secret, true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
 
 	userID := "123"
 	username := "testuser"
@@ -163,8 +191,14 @@ func TestGenerateAndValidateToken(t *testing.T) {
 }
 
 func TestValidateJWT_InvalidSignature(t *testing.T) {
-	auth1 := NewAuthMiddleware("secret1", true)
-	auth2 := NewAuthMiddleware("secret2", true)
+	auth1, err := NewAuthMiddleware("secret1", true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
+	auth2, err := NewAuthMiddleware("secret2", true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
 
 	token, err := auth1.GenerateToken("1", "user", "user", 1)
 	if err != nil {
@@ -182,7 +216,10 @@ func TestValidateJWT_InvalidSignature(t *testing.T) {
 }
 
 func TestValidateJWT_ExpiredToken(t *testing.T) {
-	auth := NewAuthMiddleware("secret", true)
+	auth, err := NewAuthMiddleware("secret", true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
 
 	token, err := auth.GenerateToken("1", "user", "user", -1) // Expires in the past
 	if err != nil {
@@ -196,5 +233,37 @@ func TestValidateJWT_ExpiredToken(t *testing.T) {
 
 	if !errors.Is(err, jwt.ErrTokenExpired) {
 		t.Errorf("Expected error to be %v, but got %v", jwt.ErrTokenExpired, err)
+	}
+}
+
+func TestValidateJWT_MissingClaims(t *testing.T) {
+	auth, err := NewAuthMiddleware("secret", true, "test-issuer", "test-audience")
+	if err != nil {
+		t.Fatalf("Failed to create auth middleware: %v", err)
+	}
+
+	// Token with missing 'Role' claim
+	claims := &Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   "test-issuer",
+			Audience: jwt.ClaimStrings{"test-audience"},
+		},
+		UserID:   "1",
+		Username: "testuser",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		t.Fatalf("Failed to sign token: %v", err)
+	}
+
+	_, err = auth.validateJWT(signedToken)
+	if err == nil {
+		t.Fatal("Expected an error for missing claims, but got nil")
+	}
+
+	if err.Error() != "token missing required claims" {
+		t.Errorf("Expected error to be 'token missing required claims', but got '%v'", err)
 	}
 }

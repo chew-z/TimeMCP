@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,7 +34,11 @@ func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
 
 	// Add HTTP context function for CORS, logging, and authentication
 	if config.HTTPCORSEnabled || config.AuthEnabled {
-		opts = append(opts, server.WithHTTPContextFunc(createHTTPMiddleware(config)))
+		httpContextFunc, err := createHTTPMiddleware(config)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, server.WithHTTPContextFunc(httpContextFunc))
 	}
 
 	// Create streamable HTTP server
@@ -61,9 +66,9 @@ func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
 	// Start server in goroutine
 	go func() {
 		defer wg.Done()
-		fmt.Printf("Starting TimeMCP HTTP server on %s%s\n", config.HTTPAddress, config.HTTPPath)
+		log.Printf("Starting TimeMCP HTTP server on %s%s\n", config.HTTPAddress, config.HTTPPath)
 		if err := customServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("HTTP server failed to start: %v\n", err)
+			log.Printf("HTTP server failed to start: %v\n", err)
 			cancel()
 		}
 	}()
@@ -71,9 +76,9 @@ func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
 	// Wait for shutdown signal
 	select {
 	case sig := <-sigChan:
-		fmt.Printf("Received signal %v, shutting down HTTP server...\n", sig)
+		log.Printf("Received signal %v, shutting down HTTP server...\n", sig)
 	case <-ctx.Done():
-		fmt.Println("Context cancelled, shutting down HTTP server...")
+		log.Println("Context cancelled, shutting down HTTP server...")
 	}
 
 	// Graceful shutdown
@@ -81,12 +86,12 @@ func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
 	defer shutdownCancel()
 
 	if err := customServer.Shutdown(shutdownCtx); err != nil {
-		fmt.Printf("HTTP server shutdown error: %v\n", err)
+		log.Printf("HTTP server shutdown error: %v\n", err)
 		return err
 	}
 
 	wg.Wait()
-	fmt.Println("HTTP server stopped")
+	log.Println("HTTP server stopped")
 	return nil
 }
 
@@ -96,10 +101,10 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 
 	// Add health endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("Health endpoint accessed from %s\n", r.RemoteAddr)
+		log.Printf("Health endpoint accessed from %s\n", r.RemoteAddr)
 
 		// Create health response
-		health := map[string]any{
+	health := map[string]any{
 			"status":    "healthy",
 			"service":   "TimeMCP",
 			"version":   "1.0.0",
@@ -120,14 +125,14 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 		}
 
 		if err := json.NewEncoder(w).Encode(health); err != nil {
-			fmt.Printf("Failed to encode health response: %v\n", err)
+			log.Printf("Failed to encode health response: %v\n", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
 
 	// Add capabilities endpoint
 	mux.HandleFunc("/capabilities", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("Capabilities endpoint accessed from %s\n", r.RemoteAddr)
+		log.Printf("Capabilities endpoint accessed from %s\n", r.RemoteAddr)
 
 		capabilities := map[string]any{
 			"tools": []map[string]any{
@@ -184,7 +189,7 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 		}
 
 		if err := json.NewEncoder(w).Encode(capabilities); err != nil {
-			fmt.Printf("Failed to encode capabilities response: %v\n", err)
+			log.Printf("Failed to encode capabilities response: %v\n", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})

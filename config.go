@@ -19,7 +19,9 @@ const (
 	defaultHTTPCORSEnabled = true
 
 	// Authentication defaults
-	defaultAuthEnabled = false
+	defaultAuthEnabled  = false
+	defaultAuthIssuer   = "TimeMCP"
+	defaultAuthAudience = "TimeMCP-user"
 
 	// Timezone defaults
 	defaultTimezone = "" // Empty means use system timezone
@@ -39,6 +41,8 @@ type Config struct {
 	// Authentication settings
 	AuthEnabled   bool
 	AuthSecretKey string
+	AuthIssuer    string
+	AuthAudience  string
 
 	// Timezone settings
 	DefaultTimezone string
@@ -71,6 +75,8 @@ func NewConfig() (*Config, error) {
 	// Authentication settings
 	authEnabled := parseEnvBool("TIME_AUTH_ENABLED", defaultAuthEnabled)
 	authSecretKey := os.Getenv("TIME_AUTH_SECRET_KEY")
+	authIssuer := getEnvWithDefault("TIME_AUTH_ISSUER", defaultAuthIssuer)
+	authAudience := getEnvWithDefault("TIME_AUTH_AUDIENCE", defaultAuthAudience)
 
 	// If authentication is enabled, require secret key
 	if authEnabled && authSecretKey == "" {
@@ -103,6 +109,8 @@ func NewConfig() (*Config, error) {
 		HTTPCORSOrigins: httpCORSOrigins,
 		AuthEnabled:     authEnabled,
 		AuthSecretKey:   authSecretKey,
+		AuthIssuer:      authIssuer,
+		AuthAudience:    authAudience,
 		DefaultTimezone: defaultTimezone,
 	}, nil
 }

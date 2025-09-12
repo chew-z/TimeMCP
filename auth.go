@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
-	"os"
+	"net/url"
 	"strings"
 	"time"
 
@@ -13,10 +14,31 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+type contextKey string
+
+const (
+	authenticatedKey  contextKey = "authenticated"
+	authErrorKey      contextKey = "auth_error"
+	userIDKey         contextKey = "user_id"
+	usernameKey       contextKey = "username"
+	userRoleKey       contextKey = "user_role"
+	httpMethodKey     contextKey = "http_method"
+	httpPathKey       contextKey = "http_path"
+	httpRemoteAddrKey contextKey = "http_remote_addr"
+)
+
+const (
+	authErrorMissingToken = "missing_token"
+	authErrorInvalidToken = "invalid_token"
+	authErrorExpiredToken = "expired_token"
+)
+
 // AuthMiddleware handles JWT-based authentication for HTTP transport
 type AuthMiddleware struct {
 	secretKey []byte
 	enabled   bool
+	issuer    string
+	audience  string
 }
 
 // Claims represents JWT token claims
@@ -28,11 +50,16 @@ type Claims struct {
 }
 
 // NewAuthMiddleware creates a new authentication middleware
-func NewAuthMiddleware(secretKey string, enabled bool) *AuthMiddleware {
+func NewAuthMiddleware(secretKey string, enabled bool, issuer string, audience string) (*AuthMiddleware, error) {
+	if enabled && secretKey == "" {
+		return nil, fmt.Errorf("auth enabled but secret key is empty")
+	}
 	return &AuthMiddleware{
 		secretKey: []byte(secretKey),
 		enabled:   enabled,
-	}
+		issuer:    issuer,
+		audience:  audience,
+	}, nil
 }
 
 // HTTPContextFunc returns a middleware function compatible with mcp-go
@@ -47,9 +74,10 @@ func (a *AuthMiddleware) HTTPContextFunc(next func(ctx context.Context, r *http.
 		authHeader := r.Header.Get("Authorization")
 		parts := strings.Fields(authHeader)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			fmt.Printf("Missing or invalid authorization header from %s\n", r.RemoteAddr)
+			log.Printf("Missing or invalid authorization header from %s\n", r.RemoteAddr)
 			// Set authentication error in context instead of failing the request
-			ctx = context.WithValue(ctx, "auth_error", "missing_token")
+			ctx = context.WithValue(ctx, authErrorKey, authErrorMissingToken)
+			ctx = context.WithValue(ctx, authenticatedKey, false)
 			return next(ctx, r)
 		}
 
@@ -58,22 +86,23 @@ func (a *AuthMiddleware) HTTPContextFunc(next func(ctx context.Context, r *http.
 		// Validate JWT token
 		claims, err := a.validateJWT(token)
 		if err != nil {
-			fmt.Printf("Invalid token from %s: %v\n", r.RemoteAddr, err)
-			errorKey := "invalid_token"
+			log.Printf("Invalid token from %s: %v\n", r.RemoteAddr, err)
+			errorKey := authErrorInvalidToken
 			if errors.Is(err, jwt.ErrTokenExpired) {
-				errorKey = "expired_token"
+				errorKey = authErrorExpiredToken
 			}
-			ctx = context.WithValue(ctx, "auth_error", errorKey)
+			ctx = context.WithValue(ctx, authErrorKey, errorKey)
+			ctx = context.WithValue(ctx, authenticatedKey, false)
 			return next(ctx, r)
 		}
 
-		fmt.Printf("Authenticated user %s (%s) from %s\n", claims.Username, claims.Role, r.RemoteAddr)
+		log.Printf("Authenticated user %s (%s) from %s\n", claims.Username, claims.Role, r.RemoteAddr)
 
 		// Add user to request context
-		ctx = context.WithValue(ctx, "authenticated", true)
-		ctx = context.WithValue(ctx, "user_id", claims.UserID)
-		ctx = context.WithValue(ctx, "username", claims.Username)
-		ctx = context.WithValue(ctx, "user_role", claims.Role)
+		ctx = context.WithValue(ctx, authenticatedKey, true)
+		ctx = context.WithValue(ctx, userIDKey, claims.UserID)
+		ctx = context.WithValue(ctx, usernameKey, claims.Username)
+		ctx = context.WithValue(ctx, userRoleKey, claims.Role)
 
 		return next(ctx, r)
 	}
@@ -82,14 +111,15 @@ func (a *AuthMiddleware) HTTPContextFunc(next func(ctx context.Context, r *http.
 // validateJWT validates a JWT token and returns the claims
 func (a *AuthMiddleware) validateJWT(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		if token.Method != jwt.SigningMethodHS256 {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return a.secretKey, nil
 	},
-		jwt.WithIssuer("pushover-mcp"),
-		jwt.WithAudience("pushover-mcp-user"),
+		jwt.WithIssuer(a.issuer),
+		jwt.WithAudience(a.audience),
 		jwt.WithLeeway(60*time.Second),
+		jwt.WithValidMethods([]string{"HS256"}),
 	)
 
 	if err != nil {
@@ -97,6 +127,9 @@ func (a *AuthMiddleware) validateJWT(tokenString string) (*Claims, error) {
 	}
 
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		if claims.UserID == "" || claims.Username == "" || claims.Role == "" {
+			return nil, fmt.Errorf("token missing required claims")
+		}
 		return claims, nil
 	}
 
@@ -108,8 +141,8 @@ func (a *AuthMiddleware) GenerateToken(userID, username, role string, expiration
 	now := time.Now()
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "pushover-mcp",
-			Audience:  jwt.ClaimStrings{"pushover-mcp-user"},
+			Issuer:    a.issuer,
+			Audience:  jwt.ClaimStrings{a.audience},
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expirationHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -125,7 +158,7 @@ func (a *AuthMiddleware) GenerateToken(userID, username, role string, expiration
 
 // isAuthenticated checks if the request context contains valid authentication
 func isAuthenticated(ctx context.Context) bool {
-	if auth, ok := ctx.Value("authenticated").(bool); ok && auth {
+	if auth, ok := ctx.Value(authenticatedKey).(bool); ok && auth {
 		return true
 	}
 	return false
@@ -133,7 +166,7 @@ func isAuthenticated(ctx context.Context) bool {
 
 // getAuthError returns any authentication error from the context
 func getAuthError(ctx context.Context) string {
-	if err, ok := ctx.Value("auth_error").(string); ok {
+	if err, ok := ctx.Value(authErrorKey).(string); ok {
 		return err
 	}
 	return ""
@@ -141,53 +174,56 @@ func getAuthError(ctx context.Context) string {
 
 // getUserInfo extracts user information from the authenticated context
 func getUserInfo(ctx context.Context) (userID, username, role string) {
-	if userID, ok := ctx.Value("user_id").(string); ok {
-		if username, ok := ctx.Value("username").(string); ok {
-			if role, ok := ctx.Value("user_role").(string); ok {
-				return userID, username, role
-			}
-		}
-	}
-	return "", "", ""
+	userID, _ = ctx.Value(userIDKey).(string)
+	username, _ = ctx.Value(usernameKey).(string)
+	role, _ = ctx.Value(userRoleKey).(string)
+	return
 }
 
 // CreateTokenCommand creates a command-line utility to generate tokens
 func CreateTokenCommand(secretKey, userID, username, role string, expirationHours int) {
 	if secretKey == "" {
-		fmt.Fprintln(os.Stderr, "Error: TIME_AUTH_SECRET_KEY environment variable is required")
+		log.Println("Error: TIME_AUTH_SECRET_KEY environment variable is required")
 		return
 	}
 
-	auth := NewAuthMiddleware(secretKey, true)
+	auth, err := NewAuthMiddleware(secretKey, true, "TimeMCP", "TimeMCP-user")
+	if err != nil {
+		log.Printf("Error creating auth middleware: %v\n", err)
+		return
+	}
 
 	token, err := auth.GenerateToken(userID, username, role, expirationHours)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error generating token: %v\n", err)
+		log.Printf("Error generating token: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "Generated JWT token:\n%s\n\n", token)
-	fmt.Fprintf(os.Stderr, "Token details:\n")
-	fmt.Fprintf(os.Stderr, "  User ID: %s\n", userID)
-	fmt.Fprintf(os.Stderr, "  Username: %s\n", username)
-	fmt.Fprintf(os.Stderr, "  Role: %s\n", role)
-	fmt.Fprintf(os.Stderr, "  Expires: %s\n", time.Now().Add(time.Duration(expirationHours)*time.Hour).Format(time.RFC3339))
-	fmt.Fprintf(os.Stderr, "\nTo use this token, include it in HTTP requests:\n")
-	fmt.Fprintf(os.Stderr, "  Authorization: Bearer %s\n", token)
+	log.Printf("Generated JWT token:\n%s\n\n", token)
+	log.Printf("Token details:\n")
+	log.Printf("  User ID: %s\n", userID)
+	log.Printf("  Username: %s\n", username)
+	log.Printf("  Role: %s\n", role)
+	log.Printf("  Expires: %s\n", time.Now().Add(time.Duration(expirationHours)*time.Hour).Format(time.RFC3339))
+	log.Printf("\nTo use this token, include it in HTTP requests:\n")
+	log.Printf("  Authorization: Bearer %s\n", token)
 }
 
-// createHTTPMiddleware creates an HTTP context function with CORS, logging, and authentication
-func createHTTPMiddleware(config *Config) server.HTTPContextFunc {
+func createHTTPMiddleware(config *Config) (server.HTTPContextFunc, error) {
 	// Create authentication middleware
 	var authMiddleware *AuthMiddleware
 	if config.AuthEnabled {
-		authMiddleware = NewAuthMiddleware(config.AuthSecretKey, config.AuthEnabled)
-		fmt.Println("HTTP authentication enabled")
+		var err error
+		authMiddleware, err = NewAuthMiddleware(config.AuthSecretKey, config.AuthEnabled, config.AuthIssuer, config.AuthAudience)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create auth middleware: %v", err)
+		}
+		log.Println("HTTP authentication enabled")
 	}
 
 	return func(ctx context.Context, r *http.Request) context.Context {
 		// Log HTTP request
-		fmt.Printf("HTTP %s %s from %s\n", r.Method, r.URL.Path, r.RemoteAddr)
+		log.Printf("HTTP %s %s from %s\n", r.Method, r.URL.Path, r.RemoteAddr)
 
 		// Apply authentication middleware if enabled
 		if authMiddleware != nil {
@@ -199,36 +235,35 @@ func createHTTPMiddleware(config *Config) server.HTTPContextFunc {
 			ctx = authMiddleware.HTTPContextFunc(nextFunc)(ctx, r)
 		}
 
-		// Add CORS headers if enabled
-		if config.HTTPCORSEnabled {
-			// Check if request origin is allowed
-			origin := r.Header.Get("Origin")
-			if origin != "" && isOriginAllowed(origin, config.HTTPCORSOrigins) {
-				fmt.Printf("CORS: Origin %s is allowed\n", origin)
-			}
-		}
-
 		// Add request info to context
-		ctx = context.WithValue(ctx, "http_method", r.Method)
-		ctx = context.WithValue(ctx, "http_path", r.URL.Path)
-		ctx = context.WithValue(ctx, "http_remote_addr", r.RemoteAddr)
+		ctx = context.WithValue(ctx, httpMethodKey, r.Method)
+		ctx = context.WithValue(ctx, httpPathKey, r.URL.Path)
+		ctx = context.WithValue(ctx, httpRemoteAddrKey, r.RemoteAddr)
 
 		return ctx
-	}
+	}, nil
 }
-
-// isOriginAllowed checks if the origin is in the allowed list
 func isOriginAllowed(origin string, allowedOrigins []string) bool {
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
 	for _, allowed := range allowedOrigins {
-		if allowed == "*" || allowed == origin {
+		if allowed == "*" {
 			return true
 		}
-		// Support wildcard subdomains (e.g., "*.example.com")
-		if domain, found := strings.CutPrefix(allowed, "*."); found {
-			if strings.HasSuffix(origin, domain) {
+		if strings.HasPrefix(allowed, "*.") {
+			domain := strings.TrimPrefix(allowed, "*.")
+			if originURL.Hostname() == domain || strings.HasSuffix(originURL.Hostname(), "."+domain) {
+				return true
+			}
+		} else {
+			if originURL.Hostname() == allowed {
 				return true
 			}
 		}
 	}
+
 	return false
 }

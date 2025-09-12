@@ -127,7 +127,7 @@ func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest, *Config) (*
 		log.Printf("Calling tool '%s'...", toolName)
 
 		// Check authentication for HTTP requests if enabled
-		if httpMethod, ok := ctx.Value("http_method").(string); ok && httpMethod != "" {
+		if httpMethod, ok := ctx.Value(httpMethodKey).(string); ok && httpMethod != "" {
 			// This is an HTTP request, check if auth is required
 			if config.AuthEnabled {
 				if authError := getAuthError(ctx); authError != "" {
