@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -59,7 +60,7 @@ func (a *AuthMiddleware) HTTPContextFunc(next func(ctx context.Context, r *http.
 		if err != nil {
 			fmt.Printf("Invalid token from %s: %v\n", r.RemoteAddr, err)
 			errorKey := "invalid_token"
-			if err == jwt.ErrTokenExpired {
+			if errors.Is(err, jwt.ErrTokenExpired) {
 				errorKey = "expired_token"
 			}
 			ctx = context.WithValue(ctx, "auth_error", errorKey)

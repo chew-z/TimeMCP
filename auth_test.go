@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -13,14 +12,6 @@ import (
 func TestAuthMiddleware(t *testing.T) {
 	secret := "test-secret"
 	auth := NewAuthMiddleware(secret, true)
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	server := httptest.NewServer(auth.HTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-		return ctx
-	})(nextHandler))
-	defer server.Close()
 
 	// Generate a valid token
 	validToken, err := auth.GenerateToken("1", "testuser", "user", 1)
@@ -34,44 +25,47 @@ func TestAuthMiddleware(t *testing.T) {
 		t.Fatalf("Failed to generate expired token: %v", err)
 	}
 
+	// Generate a token with a different secret
+	auth2 := NewAuthMiddleware("different-secret", true)
+	invalidSecretToken, err := auth2.GenerateToken("1", "testuser", "user", 1)
+	if err != nil {
+		t.Fatalf("Failed to generate token: %v", err)
+	}
+
 	testCases := []struct {
 		name          string
 		authHeader    string
-		expectedStatus int
 		expectedAuth  bool
 		expectedError string
+		expectedUserID string
 	}{
 		{
 			name:          "Valid Token",
 			authHeader:    "Bearer " + validToken,
-			expectedStatus: http.StatusOK,
 			expectedAuth:  true,
+			expectedUserID: "1",
 		},
 		{
 			name:          "Invalid Token - Wrong Secret",
-			authHeader:    "Bearer " + validToken, // Use a different middleware to validate
-			expectedStatus: http.StatusOK,
+			authHeader:    "Bearer " + invalidSecretToken,
 			expectedAuth:  false,
 			expectedError: "invalid_token",
 		},
 		{
 			name:          "Expired Token",
 			authHeader:    "Bearer " + expiredToken,
-			expectedStatus: http.StatusOK,
 			expectedAuth:  false,
 			expectedError: "expired_token",
 		},
 		{
 			name:          "Missing Token",
 			authHeader:    "",
-			expectedStatus: http.StatusOK,
 			expectedAuth:  false,
 			expectedError: "missing_token",
 		},
 		{
 			name:          "Malformed Bearer",
 			authHeader:    "Bearer" + validToken, // No space
-			expectedStatus: http.StatusOK,
 			expectedAuth:  false,
 			expectedError: "missing_token",
 		},
@@ -79,41 +73,63 @@ func TestAuthMiddleware(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", server.URL, nil)
+			req, _ := http.NewRequest("GET", "/", nil)
 			if tc.authHeader != "" {
 				req.Header.Set("Authorization", tc.authHeader)
 			}
 
-			// Create a context for the handler
-			ctx := context.Background()
+			// The next function in the middleware chain.
+			next := func(ctx context.Context, r *http.Request) context.Context {
+				return ctx
+			}
 
-			// Create a custom handler to check the context values
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// For the wrong secret case, use a different auth middleware
-				if tc.name == "Invalid Token - Wrong Secret" {
-					auth = NewAuthMiddleware("wrong-secret", true)
-				}
+			// Apply the middleware.
+			ctx := auth.HTTPContextFunc(next)(context.Background(), req)
 
-				ctx = auth.HTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-					return ctx
-				})(ctx, r)
+			// Check the context values.
+			authenticated := isAuthenticated(ctx)
+			authError := getAuthError(ctx)
+			userID, _, _ := getUserInfo(ctx)
 
-				authenticated := isAuthenticated(ctx)
-				authError := getAuthError(ctx)
+			if authenticated != tc.expectedAuth {
+				t.Errorf("Expected authenticated to be %v, but got %v", tc.expectedAuth, authenticated)
+			}
 
-				if authenticated != tc.expectedAuth {
-					t.Errorf("Expected authenticated to be %v, but got %v", tc.expectedAuth, authenticated)
-				}
+			if authError != tc.expectedError {
+				t.Errorf("Expected auth error to be '%s', but got '%s'", tc.expectedError, authError)
+			}
 
-				if authError != tc.expectedError {
-					t.Errorf("Expected auth error to be '%s', but got '%s'", tc.expectedError, authError)
-				}
-			})
-
-			handler.ServeHTTP(httptest.NewRecorder(), req)
+			if authenticated && userID != tc.expectedUserID {
+				t.Errorf("Expected userID to be '%s', but got '%s'", tc.expectedUserID, userID)
+			}
 		})
 	}
 }
+
+func TestAuthMiddleware_Disabled(t *testing.T) {
+	secret := "test-secret"
+	// Auth middleware is disabled
+	auth := NewAuthMiddleware(secret, false)
+
+	req, _ := http.NewRequest("GET", "/", nil)
+	// Even with a valid token, auth should be skipped
+	req.Header.Set("Authorization", "Bearer some-token")
+
+	next := func(ctx context.Context, r *http.Request) context.Context {
+		return ctx
+	}
+
+	ctx := auth.HTTPContextFunc(next)(context.Background(), req)
+
+	// Check that no auth values are set in the context
+	if isAuthenticated(ctx) {
+		t.Error("Expected authenticated to be false when auth is disabled")
+	}
+	if getAuthError(ctx) != "" {
+		t.Error("Expected auth error to be empty when auth is disabled")
+	}
+}
+
 
 func TestGenerateAndValidateToken(t *testing.T) {
 	secret := "test-secret"
@@ -160,7 +176,7 @@ func TestValidateJWT_InvalidSignature(t *testing.T) {
 		t.Fatal("Expected an error for invalid signature, but got nil")
 	}
 
-	if err != jwt.ErrSignatureInvalid {
+	if !errors.Is(err, jwt.ErrSignatureInvalid) {
 		t.Errorf("Expected error to be %v, but got %v", jwt.ErrSignatureInvalid, err)
 	}
 }
@@ -178,7 +194,7 @@ func TestValidateJWT_ExpiredToken(t *testing.T) {
 		t.Fatal("Expected an error for expired token, but got nil")
 	}
 
-	if err != jwt.ErrTokenExpired {
+	if !errors.Is(err, jwt.ErrTokenExpired) {
 		t.Errorf("Expected error to be %v, but got %v", jwt.ErrTokenExpired, err)
 	}
 }
