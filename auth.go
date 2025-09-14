@@ -33,6 +33,8 @@ const (
 	authErrorExpiredToken = "expired_token"
 )
 
+type httpMiddleware func(ctx context.Context, r *http.Request) context.Context
+
 // AuthMiddleware handles JWT-based authentication for HTTP transport
 type AuthMiddleware struct {
 	secretKey []byte
@@ -63,7 +65,7 @@ func NewAuthMiddleware(secretKey string, enabled bool, issuer string, audience s
 }
 
 // HTTPContextFunc returns a middleware function compatible with mcp-go
-func (a *AuthMiddleware) HTTPContextFunc(next func(ctx context.Context, r *http.Request) context.Context) func(ctx context.Context, r *http.Request) context.Context {
+func (a *AuthMiddleware) HTTPContextFunc(next httpMiddleware) httpMiddleware {
 	return func(ctx context.Context, r *http.Request) context.Context {
 		// If authentication is disabled, just call the next middleware
 		if !a.enabled {
@@ -174,9 +176,15 @@ func getAuthError(ctx context.Context) string {
 
 // getUserInfo extracts user information from the authenticated context
 func getUserInfo(ctx context.Context) (userID, username, role string) {
-	userID, _ = ctx.Value(userIDKey).(string)
-	username, _ = ctx.Value(usernameKey).(string)
-	role, _ = ctx.Value(userRoleKey).(string)
+	if val, ok := ctx.Value(userIDKey).(string); ok {
+		userID = val
+	}
+	if val, ok := ctx.Value(usernameKey).(string); ok {
+		username = val
+	}
+	if val, ok := ctx.Value(userRoleKey).(string); ok {
+		role = val
+	}
 	return
 }
 
@@ -243,44 +251,44 @@ func createHTTPMiddleware(config *Config) (server.HTTPContextFunc, error) {
 		return ctx
 	}, nil
 }
-func isOriginAllowed(origin string, allowedOrigins []string) bool {
-    originURL, err := url.Parse(origin)
-    if err != nil || originURL.Scheme == "" || originURL.Host == "" {
-        return false
-    }
-    host := originURL.Host           // may include port
-    hostname := originURL.Hostname() // host without port
+func checkOrigin(originURL *url.URL, allowed string) bool {
+	host := originURL.Host
+	hostname := originURL.Hostname()
 
-    for _, allowed := range allowedOrigins {
-        if allowed == "*" {
-            return true
-        }
-        if strings.HasPrefix(allowed, "*.") {
-            domain := strings.TrimPrefix(allowed, "*.")
-            if hostname == domain || strings.HasSuffix(hostname, "."+domain) {
-                return true
-            }
-            continue
-        }
-        // If the allowed entry has a scheme, parse and compare host/hostname
-        if strings.Contains(allowed, "://") {
-            if u, err := url.Parse(allowed); err == nil {
-                if u.Host == host || u.Hostname() == hostname {
-                    return true
-                }
-            }
-            continue
-        }
-        // If allowed contains a port, compare exact host; else compare hostname
-        if strings.Contains(allowed, ":") {
-            if allowed == host {
-                return true
-            }
-        } else {
-            if allowed == hostname {
-                return true
-            }
-        }
-    }
-    return false
+	if allowed == "*" {
+		return true
+	}
+
+	if strings.HasPrefix(allowed, "*.") {
+		domain := strings.TrimPrefix(allowed, "*.")
+		return hostname == domain || strings.HasSuffix(hostname, "."+domain)
+	}
+
+	if strings.Contains(allowed, "://") {
+		if u, err := url.Parse(allowed); err == nil {
+			return u.Host == host || u.Hostname() == hostname
+		}
+		return false
+	}
+
+	if strings.Contains(allowed, ":") {
+		return allowed == host
+	}
+
+	return allowed == hostname
+}
+
+func isOriginAllowed(origin string, allowedOrigins []string) bool {
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+		return false
+	}
+
+	for _, allowed := range allowedOrigins {
+		if checkOrigin(originURL, allowed) {
+			return true
+		}
+	}
+
+	return false
 }

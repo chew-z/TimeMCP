@@ -14,7 +14,13 @@ import (
 )
 
 // AddToolWithAuth is a helper function to add tools with authentication wrapper
-func AddToolWithAuth(s *server.MCPServer, tool mcp.Tool, toolName string, cfg *Config, handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error)) {
+func AddToolWithAuth(
+	s *server.MCPServer,
+	tool mcp.Tool,
+	toolName string,
+	cfg *Config,
+	handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error),
+) {
 	s.AddTool(tool, wrapWithAuth(handler, toolName, cfg))
 }
 
@@ -32,40 +38,31 @@ func loadTimezone(tzStr string, config *Config) (*time.Location, error) {
 }
 
 func main() {
-	// Define command-line flags for configuration override
-	transportFlag := flag.String("transport", "stdio", "Transport mode: 'stdio' (default) or 'http'")
+	if err := run(); err != nil {
+		log.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	// Authentication flags
-	authEnabledFlag := flag.Bool("auth-enabled", false, "Enable JWT authentication for HTTP transport")
-	generateTokenFlag := flag.Bool("generate-token", false, "Generate a JWT token and exit")
-	tokenUserIDFlag := flag.String("token-user-id", "user1", "User ID for token generation")
-	tokenUsernameFlag := flag.String("token-username", "admin", "Username for token generation")
-	tokenRoleFlag := flag.String("token-role", "admin", "Role for token generation")
-	tokenExpirationFlag := flag.Int("token-expiration", 744, "Token expiration in hours (default: 744 = 31 days)")
+func run() error {
+	transportFlag, authEnabledFlag, generateTokenFlag, tokenUserIDFlag, tokenUsernameFlag, tokenRoleFlag, tokenExpirationFlag := setupFlags()
 
-	flag.Parse()
-
-	// Handle token generation if requested
 	if *generateTokenFlag {
 		secretKey := os.Getenv("TIME_AUTH_SECRET_KEY")
 		CreateTokenCommand(secretKey, *tokenUserIDFlag, *tokenUsernameFlag, *tokenRoleFlag, *tokenExpirationFlag)
-		return
+		return nil
 	}
 
-	// Create configuration from environment variables
 	config, err := NewConfig()
 	if err != nil {
-		log.Printf("Configuration error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("configuration error: %w", err)
 	}
 
-	// Override authentication if flag is provided
 	if *authEnabledFlag {
 		config.AuthEnabled = true
 		log.Println("Authentication feature enabled via command line flag")
 	}
 
-	// Create a new MCP server
 	mcpServer := server.NewMCPServer(
 		"TimeMCP",
 		"1.0.0",
@@ -73,7 +70,24 @@ func main() {
 		server.WithInstructions("Time conversion and timezone utilities."),
 	)
 
-	// Add the get_current_time tool
+	addTools(mcpServer, config)
+
+	return startServer(mcpServer, config, transportFlag)
+}
+
+func setupFlags() (*string, *bool, *bool, *string, *string, *string, *int) {
+	transportFlag := flag.String("transport", "stdio", "Transport mode: 'stdio' (default) or 'http'")
+	authEnabledFlag := flag.Bool("auth-enabled", false, "Enable JWT authentication for HTTP transport")
+	generateTokenFlag := flag.Bool("generate-token", false, "Generate a JWT token and exit")
+	tokenUserIDFlag := flag.String("token-user-id", "user1", "User ID for token generation")
+	tokenUsernameFlag := flag.String("token-username", "admin", "Username for token generation")
+	tokenRoleFlag := flag.String("token-role", "admin", "Role for token generation")
+	tokenExpirationFlag := flag.Int("token-expiration", 744, "Token expiration in hours (default: 744 = 31 days)")
+	flag.Parse()
+	return transportFlag, authEnabledFlag, generateTokenFlag, tokenUserIDFlag, tokenUsernameFlag, tokenRoleFlag, tokenExpirationFlag
+}
+
+func addTools(mcpServer *server.MCPServer, config *Config) {
 	AddToolWithAuth(mcpServer,
 		mcp.NewTool("get_current_time",
 			mcp.WithDescription("Get current time in a specific timezone or system timezone."),
@@ -84,7 +98,6 @@ func main() {
 		"get_current_time", config, handleGetCurrentTime,
 	)
 
-	// Add the convert_time tool
 	AddToolWithAuth(mcpServer,
 		mcp.NewTool("convert_time",
 			mcp.WithDescription("Convert time between timezones."),
@@ -103,52 +116,37 @@ func main() {
 		),
 		"convert_time", config, handleConvertTime,
 	)
+}
 
-	// Validate transport flag
+func startServer(mcpServer *server.MCPServer, config *Config, transportFlag *string) error {
 	if *transportFlag != "stdio" && *transportFlag != "http" {
-		log.Printf("Invalid transport mode: %s. Must be 'stdio' or 'http'\n", *transportFlag)
-		os.Exit(1)
+		return fmt.Errorf("invalid transport mode: %s. Must be 'stdio' or 'http'", *transportFlag)
 	}
 
-	// Start the appropriate transport based on command-line flag
 	if *transportFlag == "http" {
 		log.Printf("Starting TimeMCP server with HTTP transport on %s%s\n", config.HTTPAddress, config.HTTPPath)
 		if err := startHTTPServer(mcpServer, config); err != nil {
-			log.Printf("HTTP server error: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("HTTP server error: %w", err)
 		}
 	} else {
 		log.Println("Starting TimeMCP server with stdio transport...")
 		if err := server.ServeStdio(mcpServer); err != nil {
-			log.Printf("Error starting server: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error starting server: %w", err)
 		}
 	}
+	return nil
 }
 
-// wrapWithAuth wraps a tool handler with authentication and logging
-func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error), toolName string, config *Config) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func wrapWithAuth(
+	handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error),
+	toolName string,
+	config *Config,
+) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		log.Printf("Calling tool '%s'...", toolName)
 
-		// Check authentication for HTTP requests if enabled
-		if httpMethod, ok := ctx.Value(httpMethodKey).(string); ok && httpMethod != "" {
-			// This is an HTTP request, check if auth is required
-			if config.AuthEnabled {
-				if authError := getAuthError(ctx); authError != "" {
-					log.Printf("Authentication failed for tool '%s': %s", toolName, authError)
-					return mcp.NewToolResultError(fmt.Sprintf("Authentication required: %s", authError)), nil
-				}
-
-				// Log successful authentication if present
-				if isAuthenticated(ctx) {
-					userID, username, role := getUserInfo(ctx)
-					log.Printf("Tool '%s' called by authenticated user %s (%s) with role %s", toolName, username, userID, role)
-				} else if config.AuthEnabled {
-					log.Printf("Authentication required for tool '%s' but not provided", toolName)
-					return mcp.NewToolResultError("Authentication required"), nil
-				}
-			}
+		if authErr := checkAuth(ctx, toolName, config); authErr != nil {
+			return authErr, nil
 		}
 
 		// Call the actual handler
@@ -162,6 +160,31 @@ func wrapWithAuth(handler func(context.Context, mcp.CallToolRequest, *Config) (*
 
 		return resp, err
 	}
+}
+
+func checkAuth(ctx context.Context, toolName string, config *Config) *mcp.CallToolResult {
+	httpMethod, ok := ctx.Value(httpMethodKey).(string)
+	if !ok || httpMethod == "" {
+		return nil // Not an HTTP request, no auth check
+	}
+
+	if !config.AuthEnabled {
+		return nil // Auth is not enabled
+	}
+
+	if authError := getAuthError(ctx); authError != "" {
+		log.Printf("Authentication failed for tool '%s': %s", toolName, authError)
+		return mcp.NewToolResultError(fmt.Sprintf("Authentication required: %s", authError))
+	}
+
+	if !isAuthenticated(ctx) {
+		log.Printf("Authentication required for tool '%s' but not provided", toolName)
+		return mcp.NewToolResultError("Authentication required")
+	}
+
+	userID, username, role := getUserInfo(ctx)
+	log.Printf("Tool '%s' called by authenticated user %s (%s) with role %s", toolName, username, userID, role)
+	return nil
 }
 
 // Handler for the get_current_time tool

@@ -1,12 +1,12 @@
 package main
 
 import (
-    "fmt"
-    "net/url"
-    "os"
-    "strconv"
-    "strings"
-    "time"
+	"fmt"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // Default configuration values
@@ -51,95 +51,127 @@ type Config struct {
 
 // NewConfig creates a new configuration from environment variables
 func NewConfig() (*Config, error) {
-    // HTTP transport settings
-    httpAddress := getEnvWithDefault("TIME_HTTP_ADDRESS", defaultHTTPAddress)
-    httpPath := getEnvWithDefault("TIME_HTTP_PATH", defaultHTTPPath)
-    httpStateless := parseEnvBool("TIME_HTTP_STATELESS", defaultHTTPStateless)
-    httpHeartbeat := parseEnvDuration("TIME_HTTP_HEARTBEAT", defaultHTTPHeartbeat)
-    httpTimeout := parseEnvDuration("TIME_HTTP_TIMEOUT", defaultHTTPTimeout)
+	httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout := parseHTTPSettings()
+	authEnabled, authSecretKey, authIssuer, authAudience, err := parseAuthSettings()
+	if err != nil {
+		return nil, err
+	}
+	httpCORSEnabled, httpCORSOrigins, err := parseCORSSettings(authEnabled)
+	if err != nil {
+		return nil, err
+	}
+	defaultTimezone, err := parseTimezoneSettings()
+	if err != nil {
+		return nil, err
+	}
 
-    // Authentication settings (parse before CORS to validate against it)
-    authEnabled := parseEnvBool("TIME_AUTH_ENABLED", defaultAuthEnabled)
-    authSecretKey := os.Getenv("TIME_AUTH_SECRET_KEY")
-    authIssuer := getEnvWithDefault("TIME_AUTH_ISSUER", defaultAuthIssuer)
-    authAudience := getEnvWithDefault("TIME_AUTH_AUDIENCE", defaultAuthAudience)
+	return &Config{
+		HTTPAddress:     httpAddress,
+		HTTPPath:        httpPath,
+		HTTPStateless:   httpStateless,
+		HTTPHeartbeat:   httpHeartbeat,
+		HTTPTimeout:     httpTimeout,
+		HTTPCORSEnabled: httpCORSEnabled,
+		HTTPCORSOrigins: httpCORSOrigins,
+		AuthEnabled:     authEnabled,
+		AuthSecretKey:   authSecretKey,
+		AuthIssuer:      authIssuer,
+		AuthAudience:    authAudience,
+		DefaultTimezone: defaultTimezone,
+	}, nil
+}
 
-    if authEnabled && authSecretKey == "" {
-        return nil, fmt.Errorf("TIME_AUTH_SECRET_KEY is required when TIME_AUTH_ENABLED=true")
-    }
-    if authEnabled && len(authSecretKey) < 32 {
-        fmt.Fprintf(os.Stderr, "[WARN] TIME_AUTH_SECRET_KEY should be at least 32 characters for security\n")
-    }
+func parseHTTPSettings() (string, string, bool, time.Duration, time.Duration) {
+	httpAddress := getEnvWithDefault("TIME_HTTP_ADDRESS", defaultHTTPAddress)
+	httpPath := getEnvWithDefault("TIME_HTTP_PATH", defaultHTTPPath)
+	httpStateless := parseEnvBool("TIME_HTTP_STATELESS", defaultHTTPStateless)
+	httpHeartbeat := parseEnvDuration("TIME_HTTP_HEARTBEAT", defaultHTTPHeartbeat)
+	httpTimeout := parseEnvDuration("TIME_HTTP_TIMEOUT", defaultHTTPTimeout)
+	return httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout
+}
 
-    // CORS settings
-    httpCORSEnabled := parseEnvBool("TIME_HTTP_CORS_ENABLED", defaultHTTPCORSEnabled)
-    var httpCORSOrigins []string
-    if originsStr := os.Getenv("TIME_HTTP_CORS_ORIGINS"); originsStr != "" {
-        parts := strings.Split(originsStr, ",")
-        seen := map[string]struct{}{}
-        for _, p := range parts {
-            trimmed := strings.TrimSpace(p)
-            if trimmed == "" {
-                continue
-            }
-            if trimmed == "*" {
-                if _, ok := seen["*" ]; !ok {
-                    httpCORSOrigins = append(httpCORSOrigins, "*")
-                    seen["*"] = struct{}{}
-                }
-                continue
-            }
-            if strings.Contains(trimmed, "://") {
-                if u, err := url.Parse(trimmed); err == nil && u.Host != "" {
-                    host := u.Host
-                    if _, ok := seen[host]; !ok {
-                        httpCORSOrigins = append(httpCORSOrigins, host)
-                        seen[host] = struct{}{}
-                    }
-                } else {
-                    fmt.Fprintf(os.Stderr, "[WARN] Invalid CORS origin URL: %q (skipping)\n", trimmed)
-                }
-                continue
-            }
-            if _, ok := seen[trimmed]; !ok {
-                httpCORSOrigins = append(httpCORSOrigins, trimmed)
-                seen[trimmed] = struct{}{}
-            }
-        }
-    }
-    // Harden: do NOT default to "*"; empty means no origins allowed.
-    if httpCORSEnabled && authEnabled {
-        for _, o := range httpCORSOrigins {
-            if o == "*" {
-                return nil, fmt.Errorf("insecure CORS: TIME_HTTP_CORS_ORIGINS contains \"*\" while TIME_AUTH_ENABLED=true")
-            }
-        }
-    }
+func parseAuthSettings() (bool, string, string, string, error) {
+	authEnabled := parseEnvBool("TIME_AUTH_ENABLED", defaultAuthEnabled)
+	authSecretKey := os.Getenv("TIME_AUTH_SECRET_KEY")
+	authIssuer := getEnvWithDefault("TIME_AUTH_ISSUER", defaultAuthIssuer)
+	authAudience := getEnvWithDefault("TIME_AUTH_AUDIENCE", defaultAuthAudience)
 
-    // Timezone settings
-    defaultTimezone := getEnvWithDefault("TIME_DEFAULT_TIMEZONE", defaultTimezone)
+	if authEnabled && authSecretKey == "" {
+		return false, "", "", "", fmt.Errorf("TIME_AUTH_SECRET_KEY is required when TIME_AUTH_ENABLED=true")
+	}
+	if authEnabled && len(authSecretKey) < 32 {
+		fmt.Fprintf(os.Stderr, "[WARN] TIME_AUTH_SECRET_KEY should be at least 32 characters for security\n")
+	}
+	return authEnabled, authSecretKey, authIssuer, authAudience, nil
+}
 
-    if defaultTimezone != "" {
-        if _, err := time.LoadLocation(defaultTimezone); err != nil {
-            return nil, fmt.Errorf("invalid TIME_DEFAULT_TIMEZONE: %s (%v)", defaultTimezone, err)
-        }
-        fmt.Fprintf(os.Stderr, "[INFO] Using default timezone: %s\n", defaultTimezone)
-    }
+func parseCORSOrigins(originsStr string) []string {
+	if originsStr == "" {
+		return nil
+	}
 
-    return &Config{
-        HTTPAddress:     httpAddress,
-        HTTPPath:        httpPath,
-        HTTPStateless:   httpStateless,
-        HTTPHeartbeat:   httpHeartbeat,
-        HTTPTimeout:     httpTimeout,
-        HTTPCORSEnabled: httpCORSEnabled,
-        HTTPCORSOrigins: httpCORSOrigins,
-        AuthEnabled:     authEnabled,
-        AuthSecretKey:   authSecretKey,
-        AuthIssuer:      authIssuer,
-        AuthAudience:    authAudience,
-        DefaultTimezone: defaultTimezone,
-    }, nil
+	parts := strings.Split(originsStr, ",")
+	seen := make(map[string]struct{})
+	httpCORSOrigins := make([]string, 0, len(parts))
+
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
+		}
+
+		addOrigin := func(origin string) {
+			if _, ok := seen[origin]; !ok {
+				httpCORSOrigins = append(httpCORSOrigins, origin)
+				seen[origin] = struct{}{}
+			}
+		}
+
+		if trimmed == "*" {
+			addOrigin("*")
+			continue
+		}
+
+		if strings.Contains(trimmed, "://") {
+			u, err := url.Parse(trimmed)
+			if err == nil && u.Host != "" {
+				addOrigin(u.Host)
+			} else {
+				fmt.Fprintf(os.Stderr, "[WARN] Invalid CORS origin URL: %q (skipping)\n", trimmed)
+			}
+			continue
+		}
+		addOrigin(trimmed)
+	}
+	return httpCORSOrigins
+}
+
+func parseCORSSettings(authEnabled bool) (bool, []string, error) {
+	httpCORSEnabled := parseEnvBool("TIME_HTTP_CORS_ENABLED", defaultHTTPCORSEnabled)
+	originsStr := os.Getenv("TIME_HTTP_CORS_ORIGINS")
+	httpCORSOrigins := parseCORSOrigins(originsStr)
+
+	// Harden: do NOT default to "*"; empty means no origins allowed.
+	if httpCORSEnabled && authEnabled {
+		for _, o := range httpCORSOrigins {
+			if o == "*" {
+				return false, nil, fmt.Errorf("insecure CORS: TIME_HTTP_CORS_ORIGINS contains \"*\" while TIME_AUTH_ENABLED=true")
+			}
+		}
+	}
+	return httpCORSEnabled, httpCORSOrigins, nil
+}
+
+func parseTimezoneSettings() (string, error) {
+	defaultTimezone := getEnvWithDefault("TIME_DEFAULT_TIMEZONE", defaultTimezone)
+
+	if defaultTimezone != "" {
+		if _, err := time.LoadLocation(defaultTimezone); err != nil {
+			return "", fmt.Errorf("invalid TIME_DEFAULT_TIMEZONE: %s (%v)", defaultTimezone, err)
+		}
+		fmt.Fprintf(os.Stderr, "[INFO] Using default timezone: %s\n", defaultTimezone)
+	}
+	return defaultTimezone, nil
 }
 
 // Helper functions for parsing environment variables
