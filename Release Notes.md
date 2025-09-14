@@ -1,20 +1,23 @@
 # Release Notes
 
-## v0.1.0 - 2025-09-12
+## v0.2.0 - 2025-09-14
 
 ### 🎉 New Features
-- **HTTP Server & Transport:** Introduced a new HTTP server to handle requests.
-- **JWT Authentication:** Implemented JWT-based authentication middleware to secure server endpoints.
-- **Configurable CORS:** Added configurable Cross-Origin Resource Sharing (CORS) support for the HTTP server.
-- **Timezone Configuration:** The default timezone for the application can now be configured.
-
-### 🐛 Bug Fixes
-- **Token Validation:** Improved token validation logic by using `errors.Is` for more robust error checking.
+- **HTTP Transport:** The server can now be run with an HTTP transport (`--transport=http`), providing RESTful endpoints for health (`/health`), capabilities (`/capabilities`), and MCP (`/mcp`).
+- **JWT Authentication:** Implemented JWT-based authentication for the HTTP transport, which can be enabled with `--auth-enabled`. This includes a utility to generate tokens (`--generate-token`).
+- **Configurable CORS:** Added CORS support for the HTTP transport, configurable via environment variables (`TIME_HTTP_CORS_ENABLED`, `TIME_HTTP_CORS_ORIGINS`).
 
 ### 🔧 Improvements
-- **Refactored Timezone Logic:** The logic for loading timezones has been extracted into a dedicated helper function.
-- **Code Cleanup:** Removed unused files and performed general code cleanup.
+- **Enhanced CORS Security:** The CORS configuration has been hardened. It is now disabled by default, and when enabled, requires an explicit allowlist of origins. Using a wildcard (`*`) origin with authentication enabled is now rejected at startup.
+- **Improved Error Propagation:** The HTTP server now correctly propagates startup errors, preventing silent failures.
+- **Default Timezone Configuration:** The default timezone for operations can now be configured using the `TIME_DEFAULT_TIMEZONE` environment variable.
+
+### 🐛 Bug Fixes
+- **Token Validation:** The JWT validation now correctly uses `errors.Is` to check for expired tokens.
 
 ### 📚 Documentation
-- **Consolidated Documentation:** Consolidated and improved project documentation for clarity.
-- **Updated README:** The README file was updated with better server build instructions and configuration details.
+- The `README.md` and `CLAUDE.md` files have been significantly updated to reflect the new HTTP transport, authentication, and CORS features.
+
+### ⚙️ Internal Changes
+- Added new tests for the hardened CORS implementation.
+- Refactored timezone loading logic into a helper function.
