@@ -244,26 +244,43 @@ func createHTTPMiddleware(config *Config) (server.HTTPContextFunc, error) {
 	}, nil
 }
 func isOriginAllowed(origin string, allowedOrigins []string) bool {
-	originURL, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
+    originURL, err := url.Parse(origin)
+    if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+        return false
+    }
+    host := originURL.Host           // may include port
+    hostname := originURL.Hostname() // host without port
 
-	for _, allowed := range allowedOrigins {
-		if allowed == "*" {
-			return true
-		}
-		if strings.HasPrefix(allowed, "*.") {
-			domain := strings.TrimPrefix(allowed, "*.")
-			if originURL.Hostname() == domain || strings.HasSuffix(originURL.Hostname(), "."+domain) {
-				return true
-			}
-		} else {
-			if originURL.Hostname() == allowed {
-				return true
-			}
-		}
-	}
-
-	return false
+    for _, allowed := range allowedOrigins {
+        if allowed == "*" {
+            return true
+        }
+        if strings.HasPrefix(allowed, "*.") {
+            domain := strings.TrimPrefix(allowed, "*.")
+            if hostname == domain || strings.HasSuffix(hostname, "."+domain) {
+                return true
+            }
+            continue
+        }
+        // If the allowed entry has a scheme, parse and compare host/hostname
+        if strings.Contains(allowed, "://") {
+            if u, err := url.Parse(allowed); err == nil {
+                if u.Host == host || u.Hostname() == hostname {
+                    return true
+                }
+            }
+            continue
+        }
+        // If allowed contains a port, compare exact host; else compare hostname
+        if strings.Contains(allowed, ":") {
+            if allowed == host {
+                return true
+            }
+        } else {
+            if allowed == hostname {
+                return true
+            }
+        }
+    }
+    return false
 }

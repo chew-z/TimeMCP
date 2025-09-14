@@ -5,13 +5,15 @@ bin/**
 
 .env
 
+*_test.go
 test_*
 
-AGENT.md
+AGENTS.md
 GOLANG.md
-USING-GODOC.md
+GODOC.md
 CODANNA.md
 
+reports/**
 .repomix/
 repomix.config.json
 repomix-output.xml
@@ -21,7 +23,6 @@ repomix-output.xml
 .codex/**
 .gemini/**
 .vscode/**
-reports/**
 
 .mcp.json
 
@@ -33,6 +34,3 @@ run_*.sh
 run_format.sh
 run_lint.sh
 run_tests.sh
-
-Release Notes.md
-CLAUDE.md

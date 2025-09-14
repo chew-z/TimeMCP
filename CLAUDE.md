@@ -93,26 +93,24 @@ When adding new time-related tools:
 
 ## HTTP Configuration
 
-### Environment Variables
-```bash
-# Timezone Configuration
-TIME_DEFAULT_TIMEZONE="UTC"           # Default timezone for operations (default: system timezone)
+Environment Variables
 
-# HTTP Transport
-TIME_HTTP_ADDRESS=":8080"              # Server address (default: ":8080")
-TIME_HTTP_PATH="/mcp"                  # MCP endpoint path (default: "/mcp")
-TIME_HTTP_STATELESS=true              # Stateless mode (default: false)
-TIME_HTTP_HEARTBEAT="30s"             # Heartbeat interval (default: "30s")
-TIME_HTTP_TIMEOUT="30s"               # Request timeout (default: "30s")
-
-# CORS Configuration
-TIME_HTTP_CORS_ENABLED=true           # Enable CORS (default: true)
-TIME_HTTP_CORS_ORIGINS="*"            # Allowed origins (default: "*")
-
-# Authentication
-TIME_AUTH_ENABLED=true                # Enable JWT auth (default: false)
-TIME_AUTH_SECRET_KEY="your-secret-key" # JWT signing key (required if auth enabled)
-```
+- Timezone:
+  - `TIME_DEFAULT_TIMEZONE="UTC"` (default: system timezone)
+- HTTP:
+  - `TIME_HTTP_ADDRESS=":8080"` (default: `:8080`)
+  - `TIME_HTTP_PATH="/mcp"` (default: `/mcp`)
+  - `TIME_HTTP_STATELESS=true|false` (default: `false`)
+  - `TIME_HTTP_HEARTBEAT="30s"` (default: `30s`)
+  - `TIME_HTTP_TIMEOUT="30s"` (default: `30s`)
+- CORS:
+  - `TIME_HTTP_CORS_ENABLED=true|false` (default: `false`)
+  - `TIME_HTTP_CORS_ORIGINS="..."` (default: empty; no allowed origins)
+- Authentication:
+  - `TIME_AUTH_ENABLED=true|false` (default: `false`)
+  - `TIME_AUTH_SECRET_KEY="your-256-bit-secret-key-here"` (required if auth enabled; ≥32 chars)
+  - `TIME_AUTH_ISSUER="TimeMCP"` (default: `TimeMCP`)
+  - `TIME_AUTH_AUDIENCE="TimeMCP-user"` (default: `TimeMCP-user`)
 
 ### JWT Authentication
 
@@ -136,32 +134,41 @@ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp/tools/call
 - `GET /capabilities` - Available tools and their schemas
 - `POST /mcp/*` - MCP protocol endpoints (tools, resources, etc.)
 
-### CORS Security Configuration
+## CORS Security Configuration
 
-⚠️ **Security Warning**: The default CORS configuration (`TIME_HTTP_CORS_ORIGINS="*"`) allows requests from any origin, which poses security risks when JWT authentication is enabled.
+Security Warning (Updated)
 
-#### Recommended CORS Settings
+- CORS is disabled by default. If you enable it, the server denies all cross-origin requests unless you provide an explicit allowlist via `TIME_HTTP_CORS_ORIGINS`.
+- When JWT auth is enabled (`TIME_AUTH_ENABLED=true`), using `*` in `TIME_HTTP_CORS_ORIGINS` is rejected at startup for security.
+- Prefer stdio transport for Claude Desktop or local tooling whenever possible.
+- Do not expose the HTTP transport publicly without:
+  - Strong JWT secrets (≥32 chars) and short token lifetimes;
+  - An explicit, minimal CORS allowlist; and
+  - TLS termination and network controls.
 
-**For Production:**
-```bash
-# Restrict to specific domains
-TIME_HTTP_CORS_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
+Allowed Origin Formats
 
-# Or disable CORS entirely for server-to-server communication
-TIME_HTTP_CORS_ENABLED=false
-```
+- Hostname: `example.com`
+- Host:port: `localhost:3000`, `127.0.0.1:8080`
+- Full URL: `https://app.example.com` (normalized to host)
+- Wildcard subdomains: `*.example.com` (matches `example.com` and any subdomain)
+- Wildcard all: `*` (only allowed when auth is disabled; not recommended)
 
-**For Development:**
-```bash
-# Allow localhost for development
-TIME_HTTP_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
-```
+Recommended Settings
 
-**Security Implications:**
-- `TIME_HTTP_CORS_ORIGINS="*"` allows any website to make requests to your TimeMCP server
-- If JWT tokens are accessible to browser JavaScript, malicious sites could potentially use them
-- Always use specific origins in production environments
-- Consider using `TIME_HTTP_CORS_ENABLED=false` for server-to-server deployments
+- Production:
+  - `TIME_HTTP_CORS_ENABLED=true`
+  - `TIME_HTTP_CORS_ORIGINS="https://yourdomain.com,https://app.yourdomain.com,*.trusted-partner.com"`
+  - Avoid `*`; disable CORS entirely if using server-to-server.
+- Development:
+  - `TIME_HTTP_CORS_ENABLED=true`
+  - `TIME_HTTP_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:5173"`
+
+Notes
+
+- Preflight (`OPTIONS`) and `Access-Control-Allow-*` headers are added only when the request’s `Origin` matches the allowlist.
+- If `TIME_HTTP_CORS_ENABLED=true` and `TIME_HTTP_CORS_ORIGINS` is empty, no origins are allowed (effectively closed).
+- If `TIME_AUTH_ENABLED=true` and `TIME_HTTP_CORS_ORIGINS` contains `*`, the server fails to start with a clear error.
 
 ## Timezone Configuration Examples
 
@@ -201,6 +208,5 @@ The project uses a comprehensive test client approach rather than unit tests. Th
 
 ## Further Instructions
 
-@./GOLANG.md
-@./CODANNA.md
-@./USING-GODOC.md
+- @./GOLANG.md
+- @./GODOC.md

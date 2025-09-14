@@ -61,38 +61,50 @@ func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+    wg.Add(1)
+    errChan := make(chan error, 1)
 
-	// Start server in goroutine
-	go func() {
-		defer wg.Done()
-		log.Printf("Starting TimeMCP HTTP server on %s%s\n", config.HTTPAddress, config.HTTPPath)
-		if err := customServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server failed to start: %v\n", err)
-			cancel()
-		}
-	}()
+    // Start server in goroutine
+    go func() {
+        defer wg.Done()
+        log.Printf("Starting TimeMCP HTTP server on %s%s\n", config.HTTPAddress, config.HTTPPath)
+        if err := customServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Printf("HTTP server failed: %v\n", err)
+            errChan <- err
+            cancel()
+        }
+    }()
 
-	// Wait for shutdown signal
-	select {
-	case sig := <-sigChan:
-		log.Printf("Received signal %v, shutting down HTTP server...\n", sig)
-	case <-ctx.Done():
-		log.Println("Context cancelled, shutting down HTTP server...")
-	}
-
-	// Graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.HTTPTimeout)
-	defer shutdownCancel()
-
-	if err := customServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("HTTP server shutdown error: %v\n", err)
-		return err
-	}
-
-	wg.Wait()
-	log.Println("HTTP server stopped")
-	return nil
+    // Wait for shutdown signal or server error
+    select {
+    case sig := <-sigChan:
+        log.Printf("Received signal %v, shutting down HTTP server...\n", sig)
+        // Graceful shutdown
+        shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.HTTPTimeout)
+        defer shutdownCancel()
+        if err := customServer.Shutdown(shutdownCtx); err != nil {
+            log.Printf("HTTP server shutdown error: %v\n", err)
+            return err
+        }
+        wg.Wait()
+        log.Println("HTTP server stopped")
+        return nil
+    case err := <-errChan:
+        // Propagate server start/run error
+        wg.Wait()
+        return err
+    case <-ctx.Done():
+        log.Println("Context cancelled, shutting down HTTP server...")
+        shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.HTTPTimeout)
+        defer shutdownCancel()
+        if err := customServer.Shutdown(shutdownCtx); err != nil {
+            log.Printf("HTTP server shutdown error: %v\n", err)
+            return err
+        }
+        wg.Wait()
+        log.Println("HTTP server stopped")
+        return nil
+    }
 }
 
 // createCustomHTTPHandler creates a custom HTTP handler that includes health endpoint

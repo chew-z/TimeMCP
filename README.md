@@ -109,3 +109,44 @@ The server supports all IANA time zone database entries like:
   }
 }
 ```
+
+## HTTP Transport and CORS
+
+- Run HTTP transport: `go run . --transport=http [--auth-enabled]`
+- Health: `GET /health`, Capabilities: `GET /capabilities`, MCP: `POST {TIME_HTTP_PATH}/*` (default `"/mcp"`)
+
+### CORS Behavior
+
+- Default: CORS is disabled (`TIME_HTTP_CORS_ENABLED=false`).
+- When enabled, no origins are allowed unless explicitly listed in `TIME_HTTP_CORS_ORIGINS`.
+- `TIME_HTTP_CORS_ORIGINS` accepts a comma-separated allowlist. Supported forms:
+  - Hostname: `example.com`
+  - Host:port: `localhost:3000`, `127.0.0.1:8080`
+  - Full URL: `https://app.example.com` (normalized to its host)
+  - Wildcard subdomain: `*.example.com` (matches `example.com` and any subdomain)
+- With `TIME_AUTH_ENABLED=true`, using `*` in `TIME_HTTP_CORS_ORIGINS` is rejected at startup.
+- Preflight and response headers are returned only for allowed origins.
+
+### Configuration Examples
+
+- Development:
+  - `TIME_HTTP_CORS_ENABLED=true`
+  - `TIME_HTTP_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:5173"`
+- Production:
+  - `TIME_HTTP_CORS_ENABLED=true`
+  - `TIME_HTTP_CORS_ORIGINS="https://yourdomain.com,https://app.yourdomain.com,*.trusted-partner.com"`
+  - Avoid `*`; if possible, disable CORS for server-to-server use.
+
+### Environment Variables
+
+- `TIME_HTTP_CORS_ENABLED` (default: `false`)
+- `TIME_HTTP_CORS_ORIGINS` (default: empty, meaning no allowed origins)
+- `TIME_AUTH_ENABLED` (default: `false`)
+- `TIME_AUTH_SECRET_KEY` (required if auth enabled; ≥32 chars)
+- `TIME_HTTP_ADDRESS` (default: `":8080"`)
+- `TIME_HTTP_PATH` (default: `"/mcp"`)
+
+### Quick HTTP Checks
+
+- `curl -i http://localhost:8080/health`
+- With JWT: `curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/capabilities`
