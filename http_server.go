@@ -118,7 +118,6 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 	mux := http.NewServeMux()
 
 	addHealthEndpoint(mux, config)
-	addCapabilitiesEndpoint(mux, config)
 	addCORSHandler(mux, mcpHandler, config)
 
 	return mux
@@ -126,8 +125,6 @@ func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handl
 
 func addHealthEndpoint(mux *http.ServeMux, config *Config) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Health endpoint accessed from %s\n", r.RemoteAddr)
-
 		health := map[string]any{
 			"status":    "healthy",
 			"service":   "TimeMCP",
@@ -152,74 +149,6 @@ func addHealthEndpoint(mux *http.ServeMux, config *Config) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
-}
-
-func addCapabilitiesEndpoint(mux *http.ServeMux, config *Config) {
-	mux.HandleFunc("/capabilities", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Capabilities endpoint accessed from %s\n", r.RemoteAddr)
-
-		capabilities := getCapabilities()
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-
-		if config.HTTPCORSEnabled {
-			origin := r.Header.Get("Origin")
-			if origin != "" && isOriginAllowed(origin, config.HTTPCORSOrigins) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			}
-		}
-
-		if err := json.NewEncoder(w).Encode(capabilities); err != nil {
-			log.Printf("Failed to encode capabilities response: %v\n", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		}
-	})
-}
-
-func getCapabilities() map[string]any {
-	return map[string]any{
-		"tools": []map[string]any{
-			{
-				"name":        "get_current_time",
-				"description": "Get current time in a specific timezone or system timezone.",
-				"inputSchema": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"timezone": map[string]any{
-							"type":        "string",
-							"description": "The timezone to get the current time in. If not provided, system timezone is used.",
-						},
-					},
-				},
-			},
-			{
-				"name":        "convert_time",
-				"description": "Convert time between timezones.",
-				"inputSchema": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"source_timezone": map[string]any{
-							"type":        "string",
-							"description": "Source timezone. Defaults to system timezone if not provided.",
-						},
-						"time": map[string]any{
-							"type":        "string",
-							"description": "Time in 24-hour format (HH:MM). Defaults to current time if not provided.",
-						},
-						"target_timezone": map[string]any{
-							"type":        "string",
-							"description": "Target timezone to convert the time to.",
-							"required":    true,
-						},
-					},
-					"required": []string{"target_timezone"},
-				},
-			},
-		},
-	}
 }
 
 func addCORSHandler(mux *http.ServeMux, mcpHandler http.Handler, config *Config) {

@@ -94,6 +94,11 @@ func addTools(mcpServer *server.MCPServer, config *Config) {
 			mcp.WithString("timezone",
 				mcp.Description("The timezone to get the current time in. If not provided, system timezone is used."),
 			),
+			mcp.WithTitleAnnotation("Get Current Time"),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
 		),
 		"get_current_time", config, handleGetCurrentTime,
 	)
@@ -113,6 +118,11 @@ func addTools(mcpServer *server.MCPServer, config *Config) {
 				mcp.Description("Target timezone to convert the time to."),
 				mcp.Required(),
 			),
+			mcp.WithTitleAnnotation("Convert Time Between Timezones"),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
 		),
 		"convert_time", config, handleConvertTime,
 	)
@@ -197,7 +207,12 @@ func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest, conf
 	}
 
 	now := time.Now().In(loc)
-	response := fmt.Sprintf("Current time in %s: %s", loc.String(), now.Format("2006-01-02 15:04:05"))
+	response := fmt.Sprintf("Current time in %s (%s, UTC%s): %s",
+		loc.String(),
+		now.Format("MST"),
+		now.Format("-07:00"),
+		now.Format("Monday, 2006-01-02 15:04:05"),
+	)
 
 	return mcp.NewToolResultText(response), nil
 }
@@ -249,9 +264,9 @@ func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config 
 
 	response := fmt.Sprintf(
 		"Time conversion: %s in %s → %s in %s",
-		sourceTime.Format("15:04"),
+		sourceTime.Format("2006-01-02 15:04"),
 		sourceTimezoneStr,
-		targetTime.Format("15:04"),
+		targetTime.Format("2006-01-02 15:04"),
 		targetTimezoneStr,
 	)
 
