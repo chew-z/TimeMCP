@@ -98,7 +98,7 @@ func (a *AuthMiddleware) HTTPContextFunc(next httpMiddleware) httpMiddleware {
 			return next(ctx, r)
 		}
 
-		log.Printf("Authenticated user %s (%s) from %s\n", claims.Username, claims.Role, r.RemoteAddr)
+		log.Printf("Authenticated user %s (%s) with role %s from %s\n", claims.Username, claims.UserID, claims.Role, r.RemoteAddr)
 
 		// Add user to request context
 		ctx = context.WithValue(ctx, authenticatedKey, true)
