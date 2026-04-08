@@ -98,8 +98,6 @@ func (a *AuthMiddleware) HTTPContextFunc(next httpMiddleware) httpMiddleware {
 			return next(ctx, r)
 		}
 
-		log.Printf("Authenticated user %s (%s) with role %s from %s\n", claims.Username, claims.UserID, claims.Role, r.RemoteAddr)
-
 		// Add user to request context
 		ctx = context.WithValue(ctx, authenticatedKey, true)
 		ctx = context.WithValue(ctx, userIDKey, claims.UserID)
@@ -230,8 +228,6 @@ func createHTTPMiddleware(config *Config) (server.HTTPContextFunc, error) {
 	}
 
 	return func(ctx context.Context, r *http.Request) context.Context {
-		// Log HTTP request
-		log.Printf("HTTP %s %s from %s\n", r.Method, r.URL.Path, r.RemoteAddr)
 
 		// Apply authentication middleware if enabled
 		if authMiddleware != nil {
