@@ -12,12 +12,13 @@ import (
 // Default configuration values
 const (
 	// HTTP transport defaults
-	defaultHTTPAddress     = ":8080"
-	defaultHTTPPath        = "/mcp"
-	defaultHTTPStateless   = false
-	defaultHTTPHeartbeat   = 30 * time.Second
-	defaultHTTPTimeout     = 30 * time.Second
-	defaultHTTPCORSEnabled = false
+	defaultHTTPAddress        = ":8080"
+	defaultHTTPPath           = "/mcp"
+	defaultHTTPStateless      = false
+	defaultHTTPHeartbeat      = 30 * time.Second
+	defaultHTTPTimeout        = 30 * time.Second
+	defaultHTTPCORSEnabled    = false
+	defaultHTTPSessionIdleTTL = 5 * time.Minute
 
 	// Authentication defaults
 	defaultAuthEnabled  = false
@@ -31,13 +32,14 @@ const (
 // Config holds the server configuration
 type Config struct {
 	// HTTP transport settings
-	HTTPAddress     string
-	HTTPPath        string
-	HTTPStateless   bool
-	HTTPHeartbeat   time.Duration
-	HTTPTimeout     time.Duration
-	HTTPCORSEnabled bool
-	HTTPCORSOrigins []string
+	HTTPAddress        string
+	HTTPPath           string
+	HTTPStateless      bool
+	HTTPHeartbeat      time.Duration
+	HTTPTimeout        time.Duration
+	HTTPCORSEnabled    bool
+	HTTPCORSOrigins    []string
+	HTTPSessionIdleTTL time.Duration
 
 	// Authentication settings
 	AuthEnabled   bool
@@ -51,7 +53,7 @@ type Config struct {
 
 // NewConfig creates a new configuration from environment variables
 func NewConfig() (*Config, error) {
-	httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout := parseHTTPSettings()
+	httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout, httpSessionIdleTTL := parseHTTPSettings()
 	authEnabled, authSecretKey, authIssuer, authAudience, err := parseAuthSettings()
 	if err != nil {
 		return nil, err
@@ -66,28 +68,30 @@ func NewConfig() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPAddress:     httpAddress,
-		HTTPPath:        httpPath,
-		HTTPStateless:   httpStateless,
-		HTTPHeartbeat:   httpHeartbeat,
-		HTTPTimeout:     httpTimeout,
-		HTTPCORSEnabled: httpCORSEnabled,
-		HTTPCORSOrigins: httpCORSOrigins,
-		AuthEnabled:     authEnabled,
-		AuthSecretKey:   authSecretKey,
-		AuthIssuer:      authIssuer,
-		AuthAudience:    authAudience,
-		DefaultTimezone: defaultTimezone,
+		HTTPAddress:        httpAddress,
+		HTTPPath:           httpPath,
+		HTTPStateless:      httpStateless,
+		HTTPHeartbeat:      httpHeartbeat,
+		HTTPTimeout:        httpTimeout,
+		HTTPCORSEnabled:    httpCORSEnabled,
+		HTTPCORSOrigins:    httpCORSOrigins,
+		HTTPSessionIdleTTL: httpSessionIdleTTL,
+		AuthEnabled:        authEnabled,
+		AuthSecretKey:      authSecretKey,
+		AuthIssuer:         authIssuer,
+		AuthAudience:       authAudience,
+		DefaultTimezone:    defaultTimezone,
 	}, nil
 }
 
-func parseHTTPSettings() (string, string, bool, time.Duration, time.Duration) {
+func parseHTTPSettings() (string, string, bool, time.Duration, time.Duration, time.Duration) {
 	httpAddress := getEnvWithDefault("TIME_HTTP_ADDRESS", defaultHTTPAddress)
 	httpPath := getEnvWithDefault("TIME_HTTP_PATH", defaultHTTPPath)
 	httpStateless := parseEnvBool("TIME_HTTP_STATELESS", defaultHTTPStateless)
 	httpHeartbeat := parseEnvDuration("TIME_HTTP_HEARTBEAT", defaultHTTPHeartbeat)
 	httpTimeout := parseEnvDuration("TIME_HTTP_TIMEOUT", defaultHTTPTimeout)
-	return httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout
+	httpSessionIdleTTL := parseEnvDuration("TIME_HTTP_SESSION_IDLE_TTL", defaultHTTPSessionIdleTTL)
+	return httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout, httpSessionIdleTTL
 }
 
 func parseAuthSettings() (bool, string, string, string, error) {
