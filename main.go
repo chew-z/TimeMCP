@@ -13,17 +13,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// AddToolWithAuth is a helper function to add tools with authentication wrapper
-func AddToolWithAuth(
-	s *server.MCPServer,
-	tool mcp.Tool,
-	toolName string,
-	cfg *Config,
-	handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error),
-) {
-	s.AddTool(tool, wrapWithAuth(handler, toolName, cfg))
-}
-
 // loadTimezone loads a timezone location, using config default or system timezone if empty
 func loadTimezone(tzStr string, config *Config) (*time.Location, error) {
 	if tzStr == "" {
@@ -70,6 +59,7 @@ func run() error {
 		server.WithInstructions("Time conversion and timezone utilities."),
 	)
 
+	mcpServer.Use(loggingMiddleware(), authMiddleware(config))
 	addTools(mcpServer, config)
 
 	return startServer(mcpServer, config, transportFlag)
@@ -88,7 +78,7 @@ func setupFlags() (*string, *bool, *bool, *string, *string, *string, *int) {
 }
 
 func addTools(mcpServer *server.MCPServer, config *Config) {
-	AddToolWithAuth(mcpServer,
+	mcpServer.AddTool(
 		mcp.NewTool("get_current_time",
 			mcp.WithDescription("Get current time in a specific timezone or system timezone."),
 			mcp.WithString("timezone",
@@ -100,10 +90,10 @@ func addTools(mcpServer *server.MCPServer, config *Config) {
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithOpenWorldHintAnnotation(false),
 		),
-		"get_current_time", config, handleGetCurrentTime,
+		handleGetCurrentTime(config),
 	)
 
-	AddToolWithAuth(mcpServer,
+	mcpServer.AddTool(
 		mcp.NewTool("convert_time",
 			mcp.WithDescription("Convert time between timezones."),
 			mcp.WithString("source_timezone",
@@ -124,7 +114,7 @@ func addTools(mcpServer *server.MCPServer, config *Config) {
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithOpenWorldHintAnnotation(false),
 		),
-		"convert_time", config, handleConvertTime,
+		handleConvertTime(config),
 	)
 }
 
@@ -147,28 +137,35 @@ func startServer(mcpServer *server.MCPServer, config *Config, transportFlag *str
 	return nil
 }
 
-func wrapWithAuth(
-	handler func(context.Context, mcp.CallToolRequest, *Config) (*mcp.CallToolResult, error),
-	toolName string,
-	config *Config,
-) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		log.Printf("Calling tool '%s'...", toolName)
+// loggingMiddleware logs tool calls and their results
+func loggingMiddleware() server.ToolHandlerMiddleware {
+	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			toolName := req.Params.Name
+			log.Printf("Calling tool '%s'...", toolName)
 
-		if authErr := checkAuth(ctx, toolName, config); authErr != nil {
-			return authErr, nil
+			result, err := next(ctx, req)
+
+			if err != nil {
+				log.Printf("Tool '%s' failed: %v", toolName, err)
+			} else {
+				log.Printf("Tool '%s' completed successfully", toolName)
+			}
+
+			return result, err
 		}
+	}
+}
 
-		// Call the actual handler
-		resp, err := handler(ctx, req, config)
-
-		if err != nil {
-			log.Printf("Tool '%s' failed: %v", toolName, err)
-		} else {
-			log.Printf("Tool '%s' completed successfully", toolName)
+// authMiddleware checks authentication for HTTP requests
+func authMiddleware(config *Config) server.ToolHandlerMiddleware {
+	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if authErr := checkAuth(ctx, req.Params.Name, config); authErr != nil {
+				return authErr, nil
+			}
+			return next(ctx, req)
 		}
-
-		return resp, err
 	}
 }
 
@@ -197,78 +194,82 @@ func checkAuth(ctx context.Context, toolName string, config *Config) *mcp.CallTo
 	return nil
 }
 
-// Handler for the get_current_time tool
-func handleGetCurrentTime(ctx context.Context, request mcp.CallToolRequest, config *Config) (*mcp.CallToolResult, error) {
-	timezoneStr := request.GetString("timezone", "")
+// handleGetCurrentTime returns a handler for the get_current_time tool
+func handleGetCurrentTime(config *Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		timezoneStr := request.GetString("timezone", "")
 
-	loc, err := loadTimezone(timezoneStr, config)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid timezone: %s", timezoneStr)), nil
+		loc, err := loadTimezone(timezoneStr, config)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid timezone: %s", timezoneStr)), nil
+		}
+
+		now := time.Now().In(loc)
+		response := fmt.Sprintf("Current time in %s (%s, UTC%s): %s",
+			loc.String(),
+			now.Format("MST"),
+			now.Format("-07:00"),
+			now.Format("Monday, 2006-01-02 15:04:05"),
+		)
+
+		return mcp.NewToolResultText(response), nil
 	}
-
-	now := time.Now().In(loc)
-	response := fmt.Sprintf("Current time in %s (%s, UTC%s): %s",
-		loc.String(),
-		now.Format("MST"),
-		now.Format("-07:00"),
-		now.Format("Monday, 2006-01-02 15:04:05"),
-	)
-
-	return mcp.NewToolResultText(response), nil
 }
 
-// Handler for the convert_time tool
-func handleConvertTime(ctx context.Context, request mcp.CallToolRequest, config *Config) (*mcp.CallToolResult, error) {
-	sourceTimezoneStr := request.GetString("source_timezone", "")
-	timeStr := request.GetString("time", "")
+// handleConvertTime returns a handler for the convert_time tool
+func handleConvertTime(config *Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		sourceTimezoneStr := request.GetString("source_timezone", "")
+		timeStr := request.GetString("time", "")
 
-	targetTimezoneStr, err := request.RequireString("target_timezone")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	// Set source timezone
-	sourceLoc, err := loadTimezone(sourceTimezoneStr, config)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid source timezone: %s", sourceTimezoneStr)), nil
-	}
-	if sourceTimezoneStr == "" {
-		sourceTimezoneStr = sourceLoc.String()
-	}
-
-	// Set target timezone
-	targetLoc, err := loadTimezone(targetTimezoneStr, config)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid target timezone: %s", targetTimezoneStr)), nil
-	}
-
-	// Determine the time to convert
-	var sourceTime time.Time
-	if timeStr == "" {
-		// Use current time if not provided
-		sourceTime = time.Now().In(sourceLoc)
-	} else {
-		// Parse the provided time
-		// We'll construct a full datetime string with today's date
-		today := time.Now().In(sourceLoc).Format("2006-01-02")
-		fullTimeStr := fmt.Sprintf("%s %s", today, timeStr)
-
-		sourceTime, err = dateparse.ParseIn(fullTimeStr, sourceLoc)
+		targetTimezoneStr, err := request.RequireString("target_timezone")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Invalid time format: %s. Please provide time in HH:MM format.", timeStr)), nil
+			return mcp.NewToolResultError(err.Error()), nil
 		}
+
+		// Set source timezone
+		sourceLoc, err := loadTimezone(sourceTimezoneStr, config)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid source timezone: %s", sourceTimezoneStr)), nil
+		}
+		if sourceTimezoneStr == "" {
+			sourceTimezoneStr = sourceLoc.String()
+		}
+
+		// Set target timezone
+		targetLoc, err := loadTimezone(targetTimezoneStr, config)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid target timezone: %s", targetTimezoneStr)), nil
+		}
+
+		// Determine the time to convert
+		var sourceTime time.Time
+		if timeStr == "" {
+			// Use current time if not provided
+			sourceTime = time.Now().In(sourceLoc)
+		} else {
+			// Parse the provided time
+			// We'll construct a full datetime string with today's date
+			today := time.Now().In(sourceLoc).Format("2006-01-02")
+			fullTimeStr := fmt.Sprintf("%s %s", today, timeStr)
+
+			sourceTime, err = dateparse.ParseIn(fullTimeStr, sourceLoc)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Invalid time format: %s. Please provide time in HH:MM format.", timeStr)), nil
+			}
+		}
+
+		// Convert to target timezone
+		targetTime := sourceTime.In(targetLoc)
+
+		response := fmt.Sprintf(
+			"Time conversion: %s in %s → %s in %s",
+			sourceTime.Format("2006-01-02 15:04"),
+			sourceTimezoneStr,
+			targetTime.Format("2006-01-02 15:04"),
+			targetTimezoneStr,
+		)
+
+		return mcp.NewToolResultText(response), nil
 	}
-
-	// Convert to target timezone
-	targetTime := sourceTime.In(targetLoc)
-
-	response := fmt.Sprintf(
-		"Time conversion: %s in %s → %s in %s",
-		sourceTime.Format("2006-01-02 15:04"),
-		sourceTimezoneStr,
-		targetTime.Format("2006-01-02 15:04"),
-		targetTimezoneStr,
-	)
-
-	return mcp.NewToolResultText(response), nil
 }
