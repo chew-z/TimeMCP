@@ -208,5 +208,14 @@ The project uses a comprehensive test client approach rather than unit tests. Th
 
 ## Further Instructions
 
-- @./GOLANG.md
-- @./GODOC.md
+## Rules for GOLANG
+
+@./GOLANG.md
+
+### Learning about Golang packages
+
+@./GODOC.md
+
+## Language server (LSP) is your superpower
+
+@./LSP.md

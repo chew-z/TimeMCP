@@ -11,19 +11,18 @@ test_*
 AGENTS.md
 GOLANG.md
 GODOC.md
-CODANNA.md
+LSP.md
+
 
 reports/**
 .repomix/
 repomix.config.json
 repomix-output.xml
 
-.aider*
-.claude/**
-.codex/**
-.gemini/**
-.vscode/**
-
+.claude/
+.codex/
+.qoder/
+.qwen/
 .mcp.json
 
 .codanna/**
