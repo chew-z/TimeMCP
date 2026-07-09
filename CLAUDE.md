@@ -104,6 +104,7 @@ Environment Variables
   - `TIME_HTTP_STATELESS=true|false` (default: `false`)
   - `TIME_HTTP_HEARTBEAT="30s"` (default: `30s`)
   - `TIME_HTTP_TIMEOUT="30s"` (default: `30s`)
+  - `TIME_HTTP_DISABLE_LOCALHOST_PROTECTION=true|false` (default: `true`) — disables mcp-go's built-in DNS-rebinding protection, which rejects requests whose `Host` header isn't loopback when the server listens on 127.0.0.1. Defaults to disabled because TimeMCP is always run behind a reverse proxy (e.g. nginx) that forwards the real `Host` header — that header is legitimately non-loopback in that setup, so the protection would otherwise 403 every proxied request. Set to `false` only if running the HTTP transport directly exposed with no reverse proxy in front of it.
 - CORS:
   - `TIME_HTTP_CORS_ENABLED=true|false` (default: `false`)
   - `TIME_HTTP_CORS_ORIGINS="..."` (default: empty; no allowed origins)

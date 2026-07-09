@@ -27,6 +27,10 @@ func createHttpServerOptions(config *Config) ([]server.StreamableHTTPOption, err
 
 	opts = append(opts, server.WithEndpointPath(config.HTTPPath))
 
+	if config.HTTPDisableLocalhostProtection {
+		opts = append(opts, server.WithDisableLocalhostProtection(true))
+	}
+
 	if config.HTTPSessionIdleTTL > 0 {
 		opts = append(opts, server.WithSessionIdleTTL(config.HTTPSessionIdleTTL))
 	}

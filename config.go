@@ -19,6 +19,12 @@ const (
 	defaultHTTPTimeout        = 30 * time.Second
 	defaultHTTPCORSEnabled    = false
 	defaultHTTPSessionIdleTTL = 5 * time.Minute
+	// TimeMCP is always deployed behind a reverse proxy (nginx) that forwards
+	// the real Host header. mcp-go's DNS-rebinding protection only guards
+	// against a browser hitting a loopback-bound server directly, which
+	// doesn't apply here — so it must stay off by default or every proxied
+	// request 403s with "invalid Host header".
+	defaultHTTPDisableLocalhostProtection = true
 
 	// Authentication defaults
 	defaultAuthEnabled  = false
@@ -32,14 +38,15 @@ const (
 // Config holds the server configuration
 type Config struct {
 	// HTTP transport settings
-	HTTPAddress        string
-	HTTPPath           string
-	HTTPStateless      bool
-	HTTPHeartbeat      time.Duration
-	HTTPTimeout        time.Duration
-	HTTPCORSEnabled    bool
-	HTTPCORSOrigins    []string
-	HTTPSessionIdleTTL time.Duration
+	HTTPAddress                    string
+	HTTPPath                       string
+	HTTPStateless                  bool
+	HTTPHeartbeat                  time.Duration
+	HTTPTimeout                    time.Duration
+	HTTPCORSEnabled                bool
+	HTTPCORSOrigins                []string
+	HTTPSessionIdleTTL             time.Duration
+	HTTPDisableLocalhostProtection bool
 
 	// Authentication settings
 	AuthEnabled   bool
@@ -53,7 +60,7 @@ type Config struct {
 
 // NewConfig creates a new configuration from environment variables
 func NewConfig() (*Config, error) {
-	httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout, httpSessionIdleTTL := parseHTTPSettings()
+	httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout, httpSessionIdleTTL, httpDisableLocalhostProtection := parseHTTPSettings()
 	authEnabled, authSecretKey, authIssuer, authAudience, err := parseAuthSettings()
 	if err != nil {
 		return nil, err
@@ -68,30 +75,32 @@ func NewConfig() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPAddress:        httpAddress,
-		HTTPPath:           httpPath,
-		HTTPStateless:      httpStateless,
-		HTTPHeartbeat:      httpHeartbeat,
-		HTTPTimeout:        httpTimeout,
-		HTTPCORSEnabled:    httpCORSEnabled,
-		HTTPCORSOrigins:    httpCORSOrigins,
-		HTTPSessionIdleTTL: httpSessionIdleTTL,
-		AuthEnabled:        authEnabled,
-		AuthSecretKey:      authSecretKey,
-		AuthIssuer:         authIssuer,
-		AuthAudience:       authAudience,
-		DefaultTimezone:    defaultTimezone,
+		HTTPAddress:                    httpAddress,
+		HTTPPath:                       httpPath,
+		HTTPStateless:                  httpStateless,
+		HTTPHeartbeat:                  httpHeartbeat,
+		HTTPTimeout:                    httpTimeout,
+		HTTPCORSEnabled:                httpCORSEnabled,
+		HTTPCORSOrigins:                httpCORSOrigins,
+		HTTPSessionIdleTTL:             httpSessionIdleTTL,
+		HTTPDisableLocalhostProtection: httpDisableLocalhostProtection,
+		AuthEnabled:                    authEnabled,
+		AuthSecretKey:                  authSecretKey,
+		AuthIssuer:                     authIssuer,
+		AuthAudience:                   authAudience,
+		DefaultTimezone:                defaultTimezone,
 	}, nil
 }
 
-func parseHTTPSettings() (string, string, bool, time.Duration, time.Duration, time.Duration) {
+func parseHTTPSettings() (string, string, bool, time.Duration, time.Duration, time.Duration, bool) {
 	httpAddress := getEnvWithDefault("TIME_HTTP_ADDRESS", defaultHTTPAddress)
 	httpPath := getEnvWithDefault("TIME_HTTP_PATH", defaultHTTPPath)
 	httpStateless := parseEnvBool("TIME_HTTP_STATELESS", defaultHTTPStateless)
 	httpHeartbeat := parseEnvDuration("TIME_HTTP_HEARTBEAT", defaultHTTPHeartbeat)
 	httpTimeout := parseEnvDuration("TIME_HTTP_TIMEOUT", defaultHTTPTimeout)
 	httpSessionIdleTTL := parseEnvDuration("TIME_HTTP_SESSION_IDLE_TTL", defaultHTTPSessionIdleTTL)
-	return httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout, httpSessionIdleTTL
+	httpDisableLocalhostProtection := parseEnvBool("TIME_HTTP_DISABLE_LOCALHOST_PROTECTION", defaultHTTPDisableLocalhostProtection)
+	return httpAddress, httpPath, httpStateless, httpHeartbeat, httpTimeout, httpSessionIdleTTL, httpDisableLocalhostProtection
 }
 
 func parseAuthSettings() (bool, string, string, string, error) {
