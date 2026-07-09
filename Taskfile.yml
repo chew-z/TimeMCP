@@ -1,0 +1,107 @@
+version: '3'
+
+vars:
+  BINARY: bin/mcp-time
+  PKG: .
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  all:
+    desc: Download deps, then build
+    deps: [deps]
+    cmds:
+      - task: build
+
+  deps:
+    desc: Download and tidy module dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  build:
+    desc: Build the server binary to bin/mcp-time
+    cmds:
+      - go build -o {{.BINARY}} {{.PKG}}
+    sources:
+      - '*.go'
+      - go.mod
+    generates:
+      - '{{.BINARY}}'
+
+  run:
+    desc: Run the server over stdio transport (default)
+    cmds:
+      - go run {{.PKG}} --transport=stdio
+
+  run:http:
+    desc: Run the server over HTTP transport
+    cmds:
+      - go run {{.PKG}} --transport=http
+
+  run:http:auth:
+    desc: Run the server over HTTP transport with JWT auth enabled
+    cmds:
+      - go run {{.PKG}} --transport=http --auth-enabled
+
+  test:
+    desc: Run the unit test suite
+    cmds:
+      - go test -count=1 ./...
+
+  test:cover:
+    desc: Run tests with a coverage summary
+    cmds:
+      - go test -count=1 -cover ./...
+
+  test-client:
+    desc: Build, then exercise the server with the example stdio MCP client
+    deps: [build]
+    cmds:
+      - go run ./examples/test_client.go
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  fmt:
+    desc: Format all Go source with gofmt
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: Fail if any Go source is not gofmt-clean
+    cmds:
+      - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+  lint:
+    desc: Run golangci-lint via run_lint.sh
+    cmds:
+      - ./run_lint.sh
+
+  check:
+    desc: Run the full pre-commit gate (fmt check, vet, lint, test)
+    cmds:
+      - task: fmt:check
+      - task: vet
+      - task: lint
+      - task: test
+
+  token:
+    desc: 'Generate a JWT token (requires TIME_AUTH_SECRET_KEY; vars: USER, NAME, ROLE)'
+    vars:
+      USER: '{{.USER | default "user123"}}'
+      NAME: '{{.NAME | default "john"}}'
+      ROLE: '{{.ROLE | default "admin"}}'
+    cmds:
+      - go run {{.PKG}} --generate-token --token-user-id="{{.USER}}" --token-username="{{.NAME}}" --token-role="{{.ROLE}}"
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf bin

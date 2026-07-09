@@ -4,8 +4,10 @@ go.sum
 bin/**
 
 .env
+tmp/
 
-*_test.go
+reports/
+
 test_*
 
 AGENTS.md
@@ -13,11 +15,6 @@ GOLANG.md
 GODOC.md
 LSP.md
 
-
-reports/**
-.repomix/
-repomix.config.json
-repomix-output.xml
 
 .claude/
 .codex/
@@ -28,6 +25,7 @@ repomix-output.xml
 .codanna/**
 .codannaignore
 .fastembed_cache/**
+.fastembed_cache
 
 run_*.sh
 run_format.sh

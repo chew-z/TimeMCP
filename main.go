@@ -116,6 +116,33 @@ func addTools(mcpServer *server.MCPServer, config *Config) {
 		),
 		handleConvertTime(config),
 	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("describe_time",
+			mcp.WithDescription("Parse a flexible date/time string and describe how it relates to now. "+
+				"Returns a machine-usable RFC 3339 timestamp alongside human-friendly prose and a perspective phrase, "+
+				"so the caller never needs to do date arithmetic. Supports both absolute dates (e.g. "+
+				"\"July 4th, 1776\", \"22:08\", \"Thursday, July 20 2026\") and relative phrases "+
+				"(\"now\", \"today\", \"tomorrow\", \"yesterday\", \"next/last/this <weekday>\", "+
+				"bare \"<weekday>\", \"in N minutes/hours/days/weeks/months/years\", \"N ... ago\", "+
+				"\"next/last week/month/year\", optionally suffixed with \"at <time>\"). "+
+				"Ambiguous inputs (weekday mismatch, mm/dd vs dd/mm, year-less dates far in the past) "+
+				"return labeled candidates instead of guessing."),
+			mcp.WithString("date",
+				mcp.Description("The date/time string to describe, e.g. \"July 4th, 1776\", \"22:08\", \"tomorrow\", or \"next tuesday at 5pm\"."),
+				mcp.Required(),
+			),
+			mcp.WithString("timezone",
+				mcp.Description("Timezone to interpret and anchor 'now' in. If not provided, system timezone is used."),
+			),
+			mcp.WithTitleAnnotation("Describe Time Relative to Now"),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
+		),
+		handleDescribeTime(config),
+	)
 }
 
 func startServer(mcpServer *server.MCPServer, config *Config, transportFlag *string) error {

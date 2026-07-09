@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TimeMCP is a Model Context Protocol (MCP) server that provides time and timezone conversion utilities. It's built on the `github.com/mark3labs/mcp-go` framework and implements two core tools:
+TimeMCP is a Model Context Protocol (MCP) server that provides time and timezone conversion utilities. It's built on the `github.com/mark3labs/mcp-go` framework and implements three core tools:
 - `get_current_time`: Gets current time in specified timezone
 - `convert_time`: Converts time between different timezones
+- `describe_time`: Parses a flexible date/time string and describes how it relates to now, returning a machine-usable RFC 3339 timestamp alongside human-friendly prose. Supports both absolute dates and relative phrases (tomorrow, next Tuesday, in 2 hours, etc.). Ambiguous inputs return labeled candidates.
 
 ## Development Commands
 
