@@ -305,6 +305,9 @@ func TestExplicitMidnightHasTime(t *testing.T) {
 		{"2026-07-11 00:00", true, "12:00 AM", "this coming Saturday"},
 		{"tomorrow", false, "", "tomorrow"},
 		{"next tuesday", false, "", "this coming Tuesday"},
+		{"tomorrow at midnight", true, "12:00 AM", "tomorrow overnight"},
+		{"tomorrow at noon", true, "12:00 PM", "tomorrow afternoon"},
+		{"yesterday at midnight", true, "12:00 AM", "yesterday overnight"},
 	}
 	for _, c := range cases {
 		t.Run(c.input, func(t *testing.T) {

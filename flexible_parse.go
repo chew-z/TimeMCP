@@ -165,7 +165,7 @@ func splitAtTime(input string) (base, timeStr string, hasTime bool) {
 		return input, "", false
 	}
 	candidate := strings.TrimSpace(input[idx+4:])
-	if clockRe.MatchString(candidate) {
+	if clockRe.MatchString(candidate) || namedTimeRe.MatchString(candidate) {
 		return strings.TrimSpace(input[:idx]), candidate, true
 	}
 	return input, "", false
@@ -174,12 +174,22 @@ func splitAtTime(input string) (base, timeStr string, hasTime bool) {
 // clockRe matches times like "5pm", "5:00pm", "17:00", "5:00 PM", "17:00:00".
 var clockRe = regexp.MustCompile(`(?i)^\d{1,2}(?::\d{2})?(?::\d{2})?\s*(am|pm)?$`)
 
+// namedTimeRe matches word-form times like "midnight" or "noon".
+var namedTimeRe = regexp.MustCompile(`(?i)^(midnight|noon)$`)
+
 // normTimeRe matches bare times like "5pm" or "5:30am" for normalization.
 var normTimeRe = regexp.MustCompile(`(?i)^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$`)
 
 // parseTimeComponent parses a clock-time string.
 func parseTimeComponent(s string, now time.Time) (time.Time, error) {
 	s = strings.TrimSpace(s)
+	// Normalize word-form times to their numeric equivalents.
+	switch strings.ToLower(s) {
+	case "midnight":
+		s = "00:00"
+	case "noon":
+		s = "12:00"
+	}
 	// Normalize "5pm" → "5:00pm" — dateparse misparses bare "5pm" as seconds.
 	if normTimeRe.MatchString(s) {
 		m := normTimeRe.FindStringSubmatch(s)

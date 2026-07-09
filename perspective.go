@@ -167,7 +167,7 @@ func perspectivePhrase(t, now time.Time, hasTime bool) string {
 	}
 	dur := later.Sub(earlier)
 
-	if s, ok := intradayPhrase(t, now, dur, future); ok {
+	if s, ok := intradayPhrase(t, now, dur, future, hasTime); ok {
 		return s
 	}
 	return calendarPhrase(t, now, later, earlier, future, hasTime)
@@ -175,7 +175,7 @@ func perspectivePhrase(t, now time.Time, hasTime bool) string {
 
 // intradayPhrase handles sub-90-minute spans and any same-day distance,
 // returning ok=false to fall through to calendar-scale phrasing.
-func intradayPhrase(t, now time.Time, dur time.Duration, future bool) (string, bool) {
+func intradayPhrase(t, now time.Time, dur time.Duration, future, hasTime bool) (string, bool) {
 	switch {
 	case dur < time.Minute:
 		return "right now", true
@@ -192,6 +192,12 @@ func intradayPhrase(t, now time.Time, dur time.Duration, future bool) (string, b
 
 	case dur < 90*time.Minute:
 		return dir(future, "about an hour from now", "about an hour ago"), true
+
+	// A day-level phrase (e.g. "today", bare weekday matching today) names
+	// the whole day, not a specific moment — "today" reads better than
+	// "earlier overnight" for a candidate that's really just midnight.
+	case sameCalendarDay(t, now) && !hasTime:
+		return "today", true
 
 	case sameCalendarDay(t, now):
 		return dir(future, partOfDay(t), "earlier "+partOfDay(t)), true

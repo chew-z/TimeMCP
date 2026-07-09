@@ -113,6 +113,7 @@ func TestPerspectiveBuckets(t *testing.T) {
 		{"45-90 min past", now.Add(-65 * time.Minute), true, "about an hour ago"},
 		{"same day evening (composite)", time.Date(2026, 7, 9, 22, 8, 0, 0, loc), true, "tonight, about an hour from now"},
 		{"same day afternoon", time.Date(2026, 7, 9, 14, 0, 0, 0, loc), true, "earlier afternoon"},
+		{"today (day-level, midnight)", time.Date(2026, 7, 9, 0, 0, 0, 0, loc), false, "today"},
 		{"tomorrow", time.Date(2026, 7, 10, 0, 0, 0, 0, loc), false, "tomorrow"},
 		{"tomorrow evening", time.Date(2026, 7, 10, 19, 0, 0, 0, loc), true, "tomorrow evening"},
 		{"yesterday", time.Date(2026, 7, 8, 0, 0, 0, 0, loc), false, "yesterday"},
