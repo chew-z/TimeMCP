@@ -53,6 +53,13 @@ tags: [status, go, mcp]
 - Smoke client moved to MCP `2026-07-28` with `server/discover` and `_meta`,
   retains one legacy `2025-11-25` initialize check, and now fails on tool errors.
 
+### 2026-10-23 — describe_time timezone fix (issue #1)
+
+- `formatSingle` and `formatMulti` normalize each candidate to `now`'s location,
+  so inputs carrying their own offset (RFC 3339 `Z`) render the requested zone
+  in `machine`, `human`, and `tense`, not just in `perspective`.
+- Tests cover CEST, CET, the near-midnight date flip, and the multi-candidate path.
+
 ### 2026-10-23 — modernization pass
 
 - Go directive raised from 1.25.5 to 1.27.0.
@@ -76,4 +83,4 @@ tags: [status, go, mcp]
   nginx must forward the OAuth authorization routes and well-known discovery
   paths as well as the MCP endpoint.
 - Re-run `task check` after any dependency change.
-- Add an HTTP integration test for the streamable endpoint and `/health`.
+- Verify a live claude.ai custom-connector login once deployed.

@@ -49,16 +49,22 @@ Repository root: `/Users/rrj/Projekty/Go/src/TimeMCP` on GoldenAir.
   and exercises MCP `2026-07-28`
   (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
   It fails on protocol or tool errors.
+- The opt-in OAuth 2.1 authorization server (`internal/oauth/`, ported from Answer) landed in `bc50c03`.
+  It is off unless `TIME_OAUTH_*` is configured; the static JWT remains a second path.
+- Issue #1 landed in `b43a11d`: `describe_time` renders inputs that carry their own offset
+  in the requested timezone.
 
 ## Roadmap
 
 ### Now
 
 - Decide whether the agent scaffolding files should be tracked.
+- Deploy with `TIME_OAUTH_*` set, forward the OAuth routes in nginx, and try a real claude.ai connector login.
 
 ### Next
 
-- Add an HTTP integration test for the streamable endpoint and `/health`.
+- Verify the live connector login and record the result in `OPEN_ITEMS.md`.
+- Land the `encodeJSON` logging fix upstream in Pushover, Alerts, and Answer.
 
 ### Later
 
@@ -67,6 +73,10 @@ Repository root: `/Users/rrj/Projekty/Go/src/TimeMCP` on GoldenAir.
 
 ## Pro tips
 
+- **OAuth enablement:** `bin/mcp-time -hash-password` prints the PBKDF2 hash for
+  `TIME_OAUTH_LOGIN_PASSWORD_HASH`; the minimum set to turn OAuth on is
+  `TIME_OAUTH_ENABLED=true`, `TIME_OAUTH_ISSUER`, `TIME_OAUTH_RESOURCE`,
+  `TIME_OAUTH_LOGIN_USER`, that hash, and a 32-byte-or-longer `TIME_AUTH_SECRET_KEY`.
 - **Test loop:** `task check` for the gate; `go test -race ./...` for concurrency;
   `task test-client` for the legacy initialize check
   and MCP `2026-07-28` requests over stdio.
