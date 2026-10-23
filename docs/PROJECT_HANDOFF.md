@@ -25,7 +25,9 @@ Repository root: `/Users/rrj/Projekty/Go/src/TimeMCP` on GoldenAir.
 1. `task check` is the gate; a red gate is not done.
 2. Read `GOLANG.md` before editing Go; standard library first, `log/slog` for logging, no ignored errors.
 3. Delegate implementation typing to Codex; verify its diffs and run the gate locally yourself.
-4. Documents live in `docs/`; reports go to `docs/reports/` (gitignored).
+4. Documents live in `docs/`.
+   Superseded docs and old reports go to `docs/retired/` (tracked).
+   New reports go to `docs/reports/` (gitignored).
 5. Markdown must pass `markdownlint-cli2`; use semantic line breaks.
 6. Never use `rm`; use `trash`.
 7. Do not bump the Go directive or add a `toolchain` line without an explicit request.
@@ -40,23 +42,23 @@ Repository root: `/Users/rrj/Projekty/Go/src/TimeMCP` on GoldenAir.
 - The modernization pass is complete: toolchain bump, `go fix`, `log/slog`,
   `signal.NotifyContext` + `WaitGroup.Go`, `encoding/json/v2` for `/health`,
   `describe_time.go` rename, a single `serverVersion` const, a `cliOptions` struct,
-  a repaired `run_release.sh`, and refreshed documentation.
-- The working tree contains the modernization changes; nothing was committed in that pass.
-- `go.sum` (previously hidden by the global gitignore too) and `examples/test_client.go` are now un-ignored
-  but still need their first commit.
+  and refreshed documentation.
+- The modernization pass was committed in `397027e`,
+  including `go.sum` and `examples/test_client.go`.
+- The stdio-only smoke client checks the legacy `2025-11-25` initialize handshake
+  and exercises MCP `2026-07-28`
+  (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
+  It fails on protocol or tool errors.
 
 ## Roadmap
 
 ### Now
 
-- Review the modernization diff, run `task check`, and commit it.
-- Cut the next release with `./run_release.sh <tag>`; the script is repaired but has not been run live.
 - Decide whether the agent scaffolding files should be tracked.
 
 ### Next
 
 - Add an HTTP integration test for the streamable endpoint and `/health`.
-- Refresh the smoke client to the MCP `2026-07-28` protocol revision.
 
 ### Later
 
@@ -66,7 +68,9 @@ Repository root: `/Users/rrj/Projekty/Go/src/TimeMCP` on GoldenAir.
 ## Pro tips
 
 - **Test loop:** `task check` for the gate; `go test -race ./...` for concurrency;
-  `task test-client` for the real MCP handshake. The smoke client needs `bin/mcp-time` first (`task build`).
+  `task test-client` for the legacy initialize check
+  and MCP `2026-07-28` requests over stdio.
+  The smoke client needs `bin/mcp-time` first (`task build`).
 - **Tool debugging:** call `describe_time` with the offending phrase and a fixed timezone; the output labels every
   ambiguity candidate and includes the machine timestamp, which is easier to assert than the prose.
 - **Time parsing quirks:** `dateparse` misreads a bare `5pm` as seconds; `parseTimeComponent` normalizes it to `5:00pm`.
@@ -91,4 +95,6 @@ This pass therefore did two things at once:
 1. Modernized the code and toolchain (recorded in `STATUS.md`).
 2. Created the missing living documents: this handoff, `ARCHITECTURE.md`, `STATUS.md`, and `OPEN_ITEMS.md`.
 
-Nothing was committed; the next session should review the diff, run `task check`, and commit.
+The modernization pass and initial role documents were committed in `397027e`.
+The smoke client has since moved to MCP `2026-07-28`,
+retaining one legacy initialize check.

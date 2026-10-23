@@ -75,7 +75,10 @@ The `--generate-token` CLI is the exception: its token and instructions go to st
 ## Testing
 
 - Unit tests sit beside the code and cover parsing, formatting, CORS, and JWT validation.
-- `examples/test_client.go` performs a full MCP handshake over stdio and calls every tool.
+- `examples/test_client.go` checks the legacy `2025-11-25` initialize handshake
+  and exercises MCP `2026-07-28` over stdio only
+  (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
+  It calls every tool and fails on protocol or tool errors.
 - `task check` runs `fmt:check`, `vet`, `lint`, and `test`.
 
 ## Deployment

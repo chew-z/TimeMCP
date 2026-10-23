@@ -21,11 +21,19 @@ tags: [status, go, mcp]
 
 - `task check` is green: gofmt, `go vet`, golangci-lint, and the unit test suite.
 - `go test -race ./...` is green.
-- The stdio smoke client (`examples/test_client.go`) completes the handshake and calls every tool.
+- The stdio-only smoke client (`examples/test_client.go`) checks the legacy
+  `2025-11-25` initialize handshake and exercises MCP `2026-07-28`
+  (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
+  It calls every tool and fails on protocol or tool errors.
 - The HTTP transport returns the `/health` payload and shuts down cleanly on SIGTERM.
 - Deployment health is not monitored from this repository; the process runs behind nginx.
 
 ## Recent changes
+
+### 2026-10-23 — smoke client protocol update
+
+- Smoke client moved to MCP `2026-07-28` with `server/discover` and `_meta`,
+  retains one legacy `2025-11-25` initialize check, and now fails on tool errors.
 
 ### 2026-10-23 — modernization pass
 
@@ -40,14 +48,11 @@ tags: [status, go, mcp]
 - `relative_time.go` renamed to `describe_time.go`; flags collected in a `cliOptions` struct.
 - Server version collapsed into one `serverVersion` constant used by MCP initialization and `/health`.
 - `CreateTokenCommand` now returns errors, and its user-facing output goes to stdout.
-- `run_release.sh` repaired: it requires a tag, builds `bin/mcp-time`, derives the repo NWO,
-  uses `--generate-notes`, and no longer deletes a notes file.
 - README, CLAUDE.md, and AGENTS.md refreshed; `docs/` role documents created.
 - `.gitignore`: `go.sum` is no longer ignored (the global `~/.gitignore` is overridden with `!go.sum`),
   and `/test_*` no longer hides `examples/test_client.go`.
 
 ## Next checkpoint
 
-- Review and commit the modernization diff; `go.sum` and `examples/test_client.go` need their first commit.
 - Re-run `task check` after any dependency change.
-- The repaired release script has passed `bash -n` and `shellcheck` but has not been run live.
+- Add an HTTP integration test for the streamable endpoint and `/health`.

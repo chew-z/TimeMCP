@@ -160,11 +160,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/mcp
 
 - Unit tests live beside the code (`*_test.go`); run them with `task test` or
   `go test -race ./...`.
-- `examples/test_client.go` performs a full stdio handshake and calls every tool;
-  it is a smoke test, not a unit test.
+- `examples/test_client.go` checks the legacy `2025-11-25` initialize handshake
+  and exercises MCP `2026-07-28` over stdio only
+  (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
+  It calls every tool and fails on protocol or tool errors.
 - `docs/ARCHITECTURE.md` explains how the pieces fit, `docs/STATUS.md` records
   the current toolchain and health, and `docs/OPEN_ITEMS.md` lists known debt.
-- Reports and analyses belong in `docs/reports/` (gitignored).
+- Superseded docs and old reports belong in `docs/retired/` (tracked).
+  New reports belong in `docs/reports/` (gitignored).
 
 ## Dependencies
 

@@ -45,15 +45,18 @@ go run . --transport=http --auth-enabled
 ```bash
 task test        # Run the unit test suite
 go test -race ./...             # Same, with the race detector
-task test-client # Full MCP handshake and tool calls (stdio only)
+task test-client # Legacy initialize check and MCP 2026-07-28 requests (stdio only)
 
 # Test HTTP transport with curl
 curl http://localhost:8080/health
 ```
 
 Unit tests live beside the code (`*_test.go`).
-The test client exercises the full MCP handshake and should be updated when a tool changes.
-It covers stdio transport only.
+The test client checks the legacy `2025-11-25` initialize handshake
+and exercises MCP `2026-07-28` over stdio only
+(`server/discover`, `tools/list`, `tools/call`) with `_meta`.
+It calls every tool and fails on protocol or tool errors.
+Update it when a tool changes.
 
 ## Architecture
 
@@ -236,9 +239,12 @@ Two layers:
 
 - **Unit tests** (`*_test.go`) cover parsing, formatting, CORS, and JWT validation.
   Run them with `task test` or `go test -race ./...`; `task check` includes them.
-- **Smoke test** (`examples/test_client.go`) performs a complete MCP handshake,
-  lists the tools, and calls each one with realistic parameters over stdio.
-  Run it with `task test-client`. It supports stdio transport only.
+- **Smoke test** (`examples/test_client.go`) checks the legacy `2025-11-25`
+  initialize handshake and exercises MCP `2026-07-28` over stdio only
+  (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
+  It calls every tool with realistic parameters
+  and fails on protocol or tool errors.
+  Run it with `task test-client`.
 
 When a tool's contract changes, update both the unit tests and the smoke client.
 

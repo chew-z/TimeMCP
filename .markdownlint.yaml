@@ -1,0 +1,80 @@
+# CANONICAL BASELINE — markdownlint settings for AI-authored docs & reports.
+# This file is the source of truth. Copy it to a project's repo root as
+# `.markdownlint.yaml`:
+#   cp markdown-authoring/references/markdownlint.yaml ./.markdownlint.yaml
+# House style: 160-char cap + semantic line breaks (see ../SKILL.md).
+# Projects may tighten or extend it (e.g. extra MD033 allowed tags);
+# they should not silently drop the conventions it encodes.
+default: true
+
+# --- Line length: a backstop against unreviewable lines, not a reading
+# measure. The cap counts raw source characters; how wide the rendered text
+# reads is the renderer's business (Typora wraps at its own measure), so a
+# bigger screen is never a reason to change this number. 160 rather than 120:
+# measured across our repos, the 121-160 band held ~37% of all MD013 findings
+# and was ~90% prose lines that read and diff fine. Semantic line breaks still
+# govern prose; this only catches lines nobody would want to review.
+# `line_length: 0` does NOT disable the rule -- markdownlint reads 0 as falsy
+# and falls back to 80; use `MD013: false` if a project wants no cap at all.
+MD013:
+  line_length: 160
+  heading_line_length: 160
+  code_block_line_length: 160
+  code_blocks: true
+  tables: true
+  strict: false
+  stern: false
+  treat_links_as_single_words: true
+
+# --- Headings
+MD003:
+  style: atx
+# Reports repeat section names under different parents — flag only siblings.
+MD024:
+  siblings_only: true
+
+# --- Front matter
+# Do not count a "title:" key as an H1, so a file may carry both a
+# frontmatter title and a "# Heading".
+MD025:
+  front_matter_title: ""
+# Allow an abstract / TOC / metadata preamble before the first heading.
+MD041:
+  allow_preamble: true
+
+# --- Code fences: fenced, backticks, always a language tag (MD040 stays on).
+MD046:
+  style: fenced
+MD048:
+  style: backtick
+
+# --- Emphasis house style: _italic_, **bold**.
+MD049:
+  style: underscore
+MD050:
+  style: asterisk
+
+# --- Inline HTML: only the tags reports legitimately need.
+MD033:
+  allowed_elements:
+    - details
+    - summary
+    - kbd
+    - sub
+    - sup
+
+# --- Dialogue: every replica is its own paragraph (custom rule shipped in
+# this skill's references/, loaded from .markdownlint-cli2.jsonc). Files listed
+# here are left alone — legacy English prose may wrap onto a dash-led line.
+# Globs match the file's ABSOLUTE path, so anchor directory names with **/.
+dialogue-paragraph:
+  ignorePaths:
+    - "**/docs/**"
+
+# --- Tables: consistent readable pipes; no forced column alignment.
+MD055:
+  style: leading_and_trailing
+# Disabled outright rather than set to `style: any`: with `default: true`
+# the "any" setting does not take effect, and MD060 still demands padded
+# column alignment — churn that breaks on every table edit.
+MD060: false
