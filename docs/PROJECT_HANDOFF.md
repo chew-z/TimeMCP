@@ -59,11 +59,9 @@ Repository root: `/Users/rrj/Projekty/Go/src/TimeMCP` on GoldenAir.
 ### Now
 
 - Decide whether the agent scaffolding files should be tracked.
-- Deploy with `TIME_OAUTH_*` set, forward the OAuth routes in nginx, and try a real claude.ai connector login.
 
 ### Next
 
-- Verify the live connector login and record the result in `OPEN_ITEMS.md`.
 - Land the `encodeJSON` logging fix upstream in Pushover, Alerts, and Answer.
 
 ### Later

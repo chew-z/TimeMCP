@@ -30,9 +30,6 @@ Check this list before debugging; an item may already explain the behavior.
 
 ## OAuth
 
-- **No live claude.ai connector login has been tested.** The flow is covered end to end over `httptest`
-  (`oauth_e2e_test.go`), but a real connector needs a deployment and nginx forwarding of
-  `/.well-known/*`, `/authorize`, `/login`, `/token`, and `/register`.
 - **OAuth state is in memory.** A restart drops clients, codes, and refresh tokens, so the connector
   asks for a fresh login; static `TIME_AUTH` bearer tokens are unaffected.
 - **`encodeJSON` diverges from the siblings.** TimeMCP logs encode failures instead of discarding them.

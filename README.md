@@ -196,6 +196,7 @@ Create a custom connector with the public MCP URL:
 https://karma.example/time/mcp
 ```
 
+The deployed instance uses `https://karma.rrj.pl/time/mcp`.
 Leave Client ID and Client Secret empty.
 Log in with the user name and password supplied by the operator.
 

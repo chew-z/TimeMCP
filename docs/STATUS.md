@@ -27,6 +27,9 @@ tags: [status, go, mcp]
   (`server/discover`, `tools/list`, `tools/call`) with `_meta`.
   It calls every tool and fails on protocol or tool errors.
 - The HTTP transport returns the `/health` payload and shuts down cleanly on SIGTERM.
+- The OAuth flow is verified live at `https://karma.rrj.pl/time/mcp` (2026-10-23):
+  registration, login, token exchange, refresh, and `tools/call` with both
+  an OAuth-issued and a static token.
 - Deployment health is not monitored from this repository; the process runs behind nginx.
 
 ## Recent changes
