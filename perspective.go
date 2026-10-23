@@ -237,7 +237,7 @@ func monthYearPhrase(t, later, earlier time.Time, future bool) string {
 		return dir(future, "in about a month", "about a month ago")
 
 	case months <= 11:
-		prefix := earlyMidLate(t.Day(), daysInMonth(t.Year(), t.Month()))
+		prefix := earlyMidLate(t.Day())
 		return dir(future,
 			fmt.Sprintf("in %s %s", prefix, t.Format("January")),
 			fmt.Sprintf("last %s (%s)", t.Format("January"), prefix))
@@ -276,7 +276,7 @@ func partOfDay(t time.Time) string {
 	}
 }
 
-func earlyMidLate(day, _ int) string {
+func earlyMidLate(day int) string {
 	switch {
 	case day <= 10:
 		return "early"

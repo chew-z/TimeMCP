@@ -41,10 +41,10 @@ func TestFormatDescribeTimeSingle(t *testing.T) {
 			}
 			// Verify machine value round-trips.
 			if !strings.Contains(out, "ambiguous") {
-				lines := strings.Split(out, "\n")
-				for _, line := range lines {
-					if strings.HasPrefix(line, "machine:") {
-						machineVal := strings.TrimSpace(strings.TrimPrefix(line, "machine:"))
+				lines := strings.SplitSeq(out, "\n")
+				for line := range lines {
+					if after, ok := strings.CutPrefix(line, "machine:"); ok {
+						machineVal := strings.TrimSpace(after)
 						_, err := time.Parse(time.RFC3339, machineVal)
 						if err != nil {
 							t.Errorf("machine value %q does not parse as RFC3339: %v", machineVal, err)
@@ -84,11 +84,11 @@ func TestFormatDescribeTimeAmbiguous(t *testing.T) {
 	}
 
 	// Verify machine values round-trip.
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(out, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "machine:") {
-			machineVal := strings.TrimSpace(strings.TrimPrefix(trimmed, "machine:"))
+		if after, ok := strings.CutPrefix(trimmed, "machine:"); ok {
+			machineVal := strings.TrimSpace(after)
 			_, err := time.Parse(time.RFC3339, machineVal)
 			if err != nil {
 				t.Errorf("machine value %q does not parse as RFC3339: %v", machineVal, err)
@@ -244,8 +244,8 @@ func TestMidnightDefaultForDayLevelPhrases(t *testing.T) {
 			}
 			// Verify human format doesn't show clock time for midnight-default inputs.
 			out := formatDescribeTime(tt.input, candidates, "", now)
-			lines := strings.Split(out, "\n")
-			for _, line := range lines {
+			lines := strings.SplitSeq(out, "\n")
+			for line := range lines {
 				if strings.HasPrefix(strings.TrimSpace(line), "human:") &&
 					strings.Contains(line, " at ") {
 					t.Errorf("%q: human line shows clock time for midnight-default input: %s", tt.input, line)

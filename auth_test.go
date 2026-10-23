@@ -243,10 +243,8 @@ func TestValidateJWT_MissingClaims(t *testing.T) {
 
 	// Token with missing 'Role' claim
 	claims := &Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:   "test-issuer",
-			Audience: jwt.ClaimStrings{"test-audience"},
-		},
+		Issuer:   "test-issuer",
+		Audience: jwt.ClaimStrings{"test-audience"},
 		UserID:   "1",
 		Username: "testuser",
 	}

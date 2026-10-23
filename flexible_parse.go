@@ -197,7 +197,7 @@ func parseTimeComponent(s string, now time.Time) (time.Time, error) {
 			s = m[1] + ":00" + m[3]
 		}
 	}
-	today := now.Format("2006-01-02")
+	today := now.Format(time.DateOnly)
 	t, err := dateparse.ParseIn(today+" "+s, now.Location())
 	if err != nil {
 		return time.Time{}, err
@@ -215,7 +215,10 @@ func matchNextLastWeekday(base string, now time.Time, prefix string) (time.Time,
 	if m == nil {
 		return time.Time{}, false, false
 	}
-	wd, _ := parseWeekdayAbbrev(m[1]) // m[1] matched the weekday regex group; always valid
+	wd, ok := parseWeekdayAbbrev(m[1])
+	if !ok {
+		return time.Time{}, false, false
+	}
 	if prefix == "next" {
 		return nextWeekday(now, wd, true), true, true
 	}
@@ -228,7 +231,10 @@ func matchThisWeekday(base string, now time.Time) (time.Time, bool, bool) {
 	if m == nil {
 		return time.Time{}, false, false
 	}
-	wd, _ := parseWeekdayAbbrev(m[1]) // regex-validated weekday
+	wd, ok := parseWeekdayAbbrev(m[1])
+	if !ok {
+		return time.Time{}, false, false
+	}
 	days := int(wd) - int(now.Weekday())
 	t := midnightIn(now, now.Location()).AddDate(0, 0, days)
 	return t, true, true
@@ -240,7 +246,10 @@ func matchBareWeekday(base string, now time.Time) (time.Time, bool, bool) {
 	if m == nil {
 		return time.Time{}, false, false
 	}
-	wd, _ := parseWeekdayAbbrev(m[1]) // regex-validated weekday
+	wd, ok := parseWeekdayAbbrev(m[1])
+	if !ok {
+		return time.Time{}, false, false
+	}
 	return nextWeekday(now, wd, false), true, true
 }
 
@@ -397,7 +406,7 @@ func parseAbsoluteDate(input string, now time.Time) ([]timeCandidate, string, er
 	// Bare time → prefix with today's date.
 	useInput := normalized
 	if bareTimeRe.MatchString(normalized) {
-		today := now.Format("2006-01-02")
+		today := now.Format(time.DateOnly)
 		useInput = today + " " + normalized
 	}
 

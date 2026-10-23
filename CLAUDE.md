@@ -4,23 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TimeMCP is a Model Context Protocol (MCP) server that provides time and timezone conversion utilities. It's built on the `github.com/mark3labs/mcp-go` framework and implements three core tools:
+TimeMCP is a Model Context Protocol (MCP) server that provides time and timezone conversion utilities.
+It targets Go 1.27 and is built on `github.com/mark3labs/mcp-go` v1, and implements three core tools:
+
 - `get_current_time`: Gets current time in specified timezone
 - `convert_time`: Converts time between different timezones
-- `describe_time`: Parses a flexible date/time string and describes how it relates to now, returning a machine-usable RFC 3339 timestamp alongside human-friendly prose. Supports both absolute dates and relative phrases (tomorrow, next Tuesday, in 2 hours, etc.). Ambiguous inputs return labeled candidates.
+- `describe_time`: Parses a flexible date/time string and describes how it relates to now,
+  returning a machine-usable RFC 3339 timestamp alongside human-friendly prose.
+  Supports both absolute dates and relative phrases (tomorrow, next Tuesday, in 2 hours, etc.).
+  Ambiguous inputs return labeled candidates.
 
 ## Development Commands
 
 ### Build and Run
+
 ```bash
-make build       # Build binary to bin/mcp-time
-make run         # Run server directly (stdio transport)
-make test-client # Test server with example client
-make clean       # Remove build artifacts
-make all         # Download deps and build
+task build        # Build binary to bin/mcp-time
+task run          # Run server directly (stdio transport)
+task test-client  # Build, then test server with example client
+task clean        # Remove build artifacts
+task all          # Download deps and build
+task check        # Pre-commit gate: fmt:check, vet, lint, test
 ```
 
 ### Transport Options
+
 ```bash
 # Run with stdio transport (default)
 go run . --transport=stdio
@@ -33,50 +41,64 @@ go run . --transport=http --auth-enabled
 ```
 
 ### Testing
+
 ```bash
-make test        # Run test suite
-go run examples/test_client.go  # Test with example MCP client (stdio only)
+task test        # Run the unit test suite
+go test -race ./...             # Same, with the race detector
+task test-client # Full MCP handshake and tool calls (stdio only)
 
 # Test HTTP transport with curl
 curl http://localhost:8080/health
-curl http://localhost:8080/capabilities
 ```
 
-The test client demonstrates full MCP handshake and tool invocation workflow for stdio transport.
+Unit tests live beside the code (`*_test.go`).
+The test client exercises the full MCP handshake and should be updated when a tool changes.
+It covers stdio transport only.
 
 ## Architecture
 
 ### Core Structure
-- **Modular implementation**: Main server logic in `main.go`, HTTP transport in `http_server.go`, authentication in `auth.go`, configuration in `config.go`
+
+- **Modular implementation**: Server entry point and tool registration in `main.go`,
+  HTTP transport in `http_server.go`, authentication and CORS origin matching in `auth.go`,
+  configuration in `config.go`, the `describe_time` handler in `describe_time.go`,
+  its parser in `flexible_parse.go`, and its prose renderer in `perspective.go`
 - **Dual Transport Support**: Both stdio and HTTP transports
 - **Tool Handlers**: Each tool receives `mcp.CallToolRequest` and returns `mcp.CallToolResult`
 
 ### Key Dependencies
-- `github.com/mark3labs/mcp-go/mcp`: MCP protocol implementation
+
+- `github.com/mark3labs/mcp-go/mcp` (v1): MCP protocol implementation
+- `github.com/golang-jwt/jwt/v5`: JWT authentication for the HTTP transport
 - `github.com/araddon/dateparse`: Flexible date parsing
 - Standard library `time` package for timezone operations
+- Standard library `log/slog` for structured logging
 
 ### Transport Modes
 
 #### Stdio Transport (Default)
+
 - JSON-RPC communication over stdin/stdout
 - Suitable for direct MCP client integration
 - No authentication required
 
 #### HTTP Transport
+
 - RESTful HTTP endpoints with JSON responses
 - Supports CORS for web applications
 - Optional JWT-based authentication
-- Health and capabilities endpoints
-- Graceful shutdown with signal handling
+- Health endpoint (`GET /health`); tool discovery uses MCP `tools/list`
+- Graceful shutdown driven by `signal.NotifyContext`
 
 ### Timezone Handling
+
 - Uses IANA timezone database via `time.LoadLocation()`
 - Defaults to system timezone when not specified
 - Helper function `loadTimezone()` centralizes timezone loading logic
 - Supports all standard timezone identifiers (e.g., "Europe/Warsaw", "America/New_York")
 
 ### Error Handling
+
 - Returns MCP-compliant errors via `mcp.NewToolResultError()`
 - Validates timezone strings before processing
 - Handles invalid time formats gracefully
@@ -84,6 +106,7 @@ The test client demonstrates full MCP handshake and tool invocation workflow for
 ## Adding New Tools
 
 When adding new time-related tools:
+
 1. Create tool using `mcp.NewTool()` with parameter specifications using `mcp.WithString()`, `mcp.WithNumber()`, etc.
 2. Use `mcp.Required()` for mandatory parameters and `mcp.DefaultString()` for optional ones
 3. Implement handler function with signature `func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)`
@@ -104,7 +127,12 @@ Environment Variables
   - `TIME_HTTP_STATELESS=true|false` (default: `false`)
   - `TIME_HTTP_HEARTBEAT="30s"` (default: `30s`)
   - `TIME_HTTP_TIMEOUT="30s"` (default: `30s`)
-  - `TIME_HTTP_DISABLE_LOCALHOST_PROTECTION=true|false` (default: `true`) — disables mcp-go's built-in DNS-rebinding protection, which rejects requests whose `Host` header isn't loopback when the server listens on 127.0.0.1. Defaults to disabled because TimeMCP is always run behind a reverse proxy (e.g. nginx) that forwards the real `Host` header — that header is legitimately non-loopback in that setup, so the protection would otherwise 403 every proxied request. Set to `false` only if running the HTTP transport directly exposed with no reverse proxy in front of it.
+  - `TIME_HTTP_SESSION_IDLE_TTL="5m"` (default: `5m`)
+  - `TIME_HTTP_DISABLE_LOCALHOST_PROTECTION=true|false` (default: `true`) — disables mcp-go's built-in DNS-rebinding protection,
+    which rejects requests whose `Host` header isn't loopback when the server listens on 127.0.0.1.
+    Defaults to disabled because TimeMCP always runs behind a reverse proxy (e.g. nginx) that forwards the real `Host` header;
+    that header is legitimately non-loopback in that setup, so the protection would otherwise 403 every proxied request.
+    Set to `false` only if the HTTP transport is exposed directly with no reverse proxy in front of it.
 - CORS:
   - `TIME_HTTP_CORS_ENABLED=true|false` (default: `false`)
   - `TIME_HTTP_CORS_ORIGINS="..."` (default: empty; no allowed origins)
@@ -117,6 +145,7 @@ Environment Variables
 ### JWT Authentication
 
 #### Generate Token
+
 ```bash
 # Set secret key
 export TIME_AUTH_SECRET_KEY="your-256-bit-secret-key-here"
@@ -126,15 +155,16 @@ go run . --generate-token --token-user-id="user123" --token-username="john" --to
 ```
 
 #### Use Token
+
 ```bash
 # Include in HTTP requests
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp/tools/call
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp
 ```
 
 ### HTTP Endpoints
+
 - `GET /health` - Health check endpoint
-- `GET /capabilities` - Available tools and their schemas
-- `POST /mcp/*` - MCP protocol endpoints (tools, resources, etc.)
+- `POST /mcp` - Streamable HTTP MCP endpoint (configurable via `TIME_HTTP_PATH`)
 
 ## CORS Security Configuration
 
@@ -194,6 +224,7 @@ go run .
 ```
 
 **How it works:**
+
 - When `timezone` parameter is provided in tool calls, it takes precedence
 - When `timezone` parameter is empty/missing, `TIME_DEFAULT_TIMEZONE` is used
 - If `TIME_DEFAULT_TIMEZONE` is not set, system timezone is used
@@ -201,12 +232,15 @@ go run .
 
 ## Testing Strategy
 
-The project uses a comprehensive test client approach rather than unit tests. The `examples/test_client.go`:
-- Demonstrates complete MCP handshake
-- Tests both tools with realistic parameters
-- Validates JSON-RPC communication flow
-- Serves as documentation for MCP integration
-- **Note**: Currently supports stdio transport only
+Two layers:
+
+- **Unit tests** (`*_test.go`) cover parsing, formatting, CORS, and JWT validation.
+  Run them with `task test` or `go test -race ./...`; `task check` includes them.
+- **Smoke test** (`examples/test_client.go`) performs a complete MCP handshake,
+  lists the tools, and calls each one with realistic parameters over stdio.
+  Run it with `task test-client`. It supports stdio transport only.
+
+When a tool's contract changes, update both the unit tests and the smoke client.
 
 ## Further Instructions
 

@@ -1,7 +1,8 @@
 .DS_Store
 
-go.sum
 bin/**
+# Track the module checksum for reproducible builds (overrides a global ignore).
+!go.sum
 .task/checksum/
 
 .env
@@ -9,7 +10,7 @@ tmp/
 
 reports/
 
-test_*
+/test_*
 
 AGENTS.md
 GOLANG.md

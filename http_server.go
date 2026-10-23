@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"log"
+	jsonv2 "encoding/json/v2"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,7 +16,9 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func createHttpServerOptions(config *Config) ([]server.StreamableHTTPOption, error) {
+const readHeaderTimeout = 10 * time.Second
+
+func createHTTPServerOptions(config *Config) ([]server.StreamableHTTPOption, error) {
 	var opts []server.StreamableHTTPOption
 
 	if config.HTTPHeartbeat > 0 {
@@ -46,74 +50,55 @@ func createHttpServerOptions(config *Config) ([]server.StreamableHTTPOption, err
 	return opts, nil
 }
 
-func createCustomHttpServer(httpServer http.Handler, config *Config) *http.Server {
+func createCustomHTTPServer(httpServer http.Handler, config *Config) *http.Server {
 	return &http.Server{
-		Addr:         config.HTTPAddress,
-		Handler:      createCustomHTTPHandler(httpServer, config),
-		ReadTimeout:  config.HTTPTimeout,
-		WriteTimeout: config.HTTPTimeout,
+		Addr:              config.HTTPAddress,
+		Handler:           createCustomHTTPHandler(httpServer, config),
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       config.HTTPTimeout,
+		WriteTimeout:      config.HTTPTimeout,
 	}
 }
 
 func handleGracefulShutdown(server *http.Server, config *Config) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	errChan := make(chan error, 1)
+	serveErrCh := make(chan error, 1)
 
-	go func() {
-		defer wg.Done()
-		log.Printf("Starting TimeMCP HTTP server on %s\n", server.Addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server failed: %v\n", err)
-			errChan <- err
-			cancel()
+	wg.Go(func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErrCh <- err
 		}
-	}()
+	})
 
 	select {
-	case sig := <-sigChan:
-		log.Printf("Received signal %v, shutting down HTTP server...\n", sig)
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.HTTPTimeout)
-		defer shutdownCancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("HTTP server shutdown error: %v\n", err)
-			return err
-		}
-		wg.Wait()
-		log.Println("HTTP server stopped")
-		return nil
-	case err := <-errChan:
-		wg.Wait()
-		return err
 	case <-ctx.Done():
-		log.Println("Context cancelled, shutting down HTTP server...")
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.HTTPTimeout)
-		defer shutdownCancel()
+		slog.Info("received signal, shutting down HTTP server")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), config.HTTPTimeout)
+		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("HTTP server shutdown error: %v\n", err)
-			return err
+			return fmt.Errorf("shutting down HTTP server: %w", err)
 		}
 		wg.Wait()
-		log.Println("HTTP server stopped")
+		slog.Info("HTTP server stopped")
 		return nil
+	case err := <-serveErrCh:
+		wg.Wait()
+		return fmt.Errorf("serving HTTP: %w", err)
 	}
 }
 
 // startHTTPServer starts the HTTP transport server
 func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
-	opts, err := createHttpServerOptions(config)
+	opts, err := createHTTPServerOptions(config)
 	if err != nil {
 		return err
 	}
 
 	httpServer := server.NewStreamableHTTPServer(mcpServer, opts...)
-	customServer := createCustomHttpServer(httpServer, config)
+	customServer := createCustomHTTPServer(httpServer, config)
 
 	return handleGracefulShutdown(customServer, config)
 }
@@ -132,7 +117,7 @@ func addHealthEndpoint(mux *http.ServeMux, config *Config) {
 		health := map[string]any{
 			"status":    "healthy",
 			"service":   "TimeMCP",
-			"version":   "1.0.0",
+			"version":   serverVersion,
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		}
 
@@ -148,8 +133,8 @@ func addHealthEndpoint(mux *http.ServeMux, config *Config) {
 			}
 		}
 
-		if err := json.NewEncoder(w).Encode(health); err != nil {
-			log.Printf("Failed to encode health response: %v\n", err)
+		if err := jsonv2.MarshalWrite(w, health); err != nil {
+			slog.Error("failed to encode health response", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
@@ -169,7 +154,7 @@ func addCORSHandler(mux *http.ServeMux, mcpHandler http.Handler, config *Config)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-			if r.Method == "OPTIONS" {
+			if r.Method == http.MethodOptions {
 				w.Header().Set("Access-Control-Max-Age", "86400")
 				w.WriteHeader(http.StatusOK)
 				return

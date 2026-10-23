@@ -1,152 +1,178 @@
 # TimeMCP
 
-A simple Model Control Protocol (MCP) server that provides time and timezone conversion tools.
+A Model Context Protocol (MCP) server that provides time and timezone tools.
+It runs over stdio (default) or streamable HTTP and is built on
+[`mark3labs/mcp-go`](https://github.com/mark3labs/mcp-go).
 
-## Features
+## Tools
 
-The server provides the following tools:
+### `get_current_time`
 
-### 1. `get_current_time`
+Returns the current time in a specific timezone or the system timezone.
 
-Gets the current time in a specific timezone or the system timezone.
+| Argument | Type | Required | Description |
+| --- | --- | --- | --- |
+| `timezone` | string | no | IANA timezone; defaults to `TIME_DEFAULT_TIMEZONE`, then the system timezone |
 
-**Arguments:**
-- `timezone` (string, optional): The timezone to get the current time in. If not provided, the system timezone is used.
+Example response:
 
-**Example Response:**
-```
-Current time in Europe/Warsaw: 2025-04-09 15:30:45
-```
-
-### 2. `convert_time`
-
-Converts time between different timezones.
-
-**Arguments:**
-- `source_timezone` (string, optional): Source timezone. Defaults to system timezone if not provided.
-- `time` (string, optional): Time in 24-hour format (HH:MM). Defaults to current time if not provided.
-- `target_timezone` (string, required): Target timezone to convert the time to.
-
-**Example Response:**
-```
-Time conversion: 15:30 in Europe/Warsaw → 09:30 in America/New_York
+```text
+Current time in Europe/Warsaw (CEST, UTC+02:00): Monday, 2025-04-09 15:30:45
 ```
 
-## Usage
+### `convert_time`
 
-### Build
+Converts a time from one timezone to another.
+
+| Argument | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source_timezone` | string | no | Source IANA timezone; defaults to the configured default |
+| `time` | string | no | Time in `HH:MM` format; defaults to now |
+| `target_timezone` | string | yes | Target IANA timezone |
+
+Example response:
+
+```text
+Time conversion: 2025-04-09 15:30 in Europe/Warsaw → 2025-04-09 09:30 in America/New_York
+```
+
+### `describe_time`
+
+Parses a flexible date/time string and describes how it relates to now.
+It returns a machine-usable RFC 3339 timestamp plus human-friendly prose,
+so the caller never has to do date arithmetic.
+
+Supported inputs include absolute dates (`July 4th, 1776`, `22:08`,
+`Thursday, July 20 2026`) and relative phrases (`now`, `today`, `tomorrow`,
+`yesterday`, `next/last/this <weekday>`, bare `<weekday>`,
+`in N minutes/hours/days/weeks/months/years`, `N ... ago`,
+`next/last week/month/year`), optionally suffixed with `at <time>`.
+
+Ambiguous inputs return labeled candidates instead of guessing:
+a weekday that does not match the date, `mm/dd` versus `dd/mm`,
+and a year-less date more than 30 days in the past.
+
+| Argument | Type | Required | Description |
+| --- | --- | --- | --- |
+| `date` | string | yes | Date/time phrase to interpret |
+| `timezone` | string | no | Timezone used to anchor "now"; defaults as above |
+
+Example response:
+
+```text
+input:       "tomorrow at 5pm"
+machine:     2026-10-24T17:00:00-04:00
+human:       tomorrow at 5:00 PM
+tense:       future
+perspective: tomorrow evening
+```
+
+## Build and run
+
+The `Taskfile.yml` wraps the common commands; `go` works directly too.
 
 ```bash
-go build -o ./bin/mcp-time .
+task build                       # go build -o bin/mcp-time .
+task run                         # stdio transport
+task run:http                    # HTTP transport on :8080
+task run:http:auth               # HTTP transport with JWT auth
+task test                        # unit tests
+task test-client                 # stdio smoke test via examples/test_client.go
+task check                       # fmt:check, vet, lint, test
 ```
 
-### Add to claude_desktop_config.json
+## Client configuration
+
+Claude Desktop (stdio transport):
 
 ```json
-{                                                                                 "mcpServers": {
-  "time": {
-        "command": "/Path/To/Your/Bin/mcp-time"
-      }
+{
+  "mcpServers": {
+    "time": {
+      "command": "/Path/To/Your/Bin/mcp-time"
+    }
   }
 }
 ```
 
-### Using with MCP-compatible Clients
+Any MCP-compatible client can discover the tools, call them, and read the
+formatted responses.
 
-The server implements the Model Control Protocol, which means it can be used with any MCP-compatible client. The client will be able to:
+## HTTP transport
 
-1. Discover the available tools
-2. Call the tools with the appropriate arguments
-3. Receive formatted responses
+Start the server with `--transport=http` (optionally `--auth-enabled`).
+The MCP endpoint is `POST {TIME_HTTP_PATH}` (default `/mcp`).
+Health checks live at `GET /health`; there is no separate capabilities endpoint
+(tool discovery goes through MCP `tools/list`).
+
+### CORS
+
+CORS is disabled by default.
+When enabled, no origin is allowed unless it is listed explicitly.
+
+`TIME_HTTP_CORS_ORIGINS` accepts a comma-separated allowlist:
+
+- Hostname: `example.com`
+- Host and port: `localhost:3000`, `127.0.0.1:8080`
+- Full URL: `https://app.example.com` (normalized to its host)
+- Wildcard subdomain: `*.example.com` (matches `example.com` and any subdomain)
+- `*` (only when authentication is disabled)
+
+With `TIME_AUTH_ENABLED=true`, a `*` entry is rejected at startup.
+Preflight and response headers are emitted only for allowed origins.
+
+### JWT authentication
+
+Generate a token (the secret must be at least 32 characters):
+
+```bash
+export TIME_AUTH_SECRET_KEY="your-256-bit-secret-key-here"
+go run . --generate-token \
+  --token-user-id="user123" --token-username="john" --token-role="admin"
+```
+
+Send it with each HTTP request:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/mcp
+```
+
+## Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TIME_DEFAULT_TIMEZONE` | system timezone | Default IANA timezone for all tools |
+| `TIME_HTTP_ADDRESS` | `:8080` | HTTP listen address |
+| `TIME_HTTP_PATH` | `/mcp` | MCP endpoint path |
+| `TIME_HTTP_STATELESS` | `false` | Run the streamable HTTP transport without sessions |
+| `TIME_HTTP_HEARTBEAT` | `30s` | SSE heartbeat interval |
+| `TIME_HTTP_TIMEOUT` | `30s` | Read, write, and shutdown timeout |
+| `TIME_HTTP_SESSION_IDLE_TTL` | `5m` | Idle session eviction |
+| `TIME_HTTP_DISABLE_LOCALHOST_PROTECTION` | `true` | Disable DNS-rebinding checks (TimeMCP runs behind a reverse proxy) |
+| `TIME_HTTP_CORS_ENABLED` | `false` | Enable the CORS wrapper |
+| `TIME_HTTP_CORS_ORIGINS` | empty | Comma-separated origin allowlist |
+| `TIME_AUTH_ENABLED` | `false` | Require a JWT on HTTP tool calls |
+| `TIME_AUTH_SECRET_KEY` | empty | HMAC secret, required when auth is enabled |
+| `TIME_AUTH_ISSUER` | `TimeMCP` | Expected JWT issuer |
+| `TIME_AUTH_AUDIENCE` | `TimeMCP-user` | Expected JWT audience |
+
+## Development
+
+- Unit tests live beside the code (`*_test.go`); run them with `task test` or
+  `go test -race ./...`.
+- `examples/test_client.go` performs a full stdio handshake and calls every tool;
+  it is a smoke test, not a unit test.
+- `docs/ARCHITECTURE.md` explains how the pieces fit, `docs/STATUS.md` records
+  the current toolchain and health, and `docs/OPEN_ITEMS.md` lists known debt.
+- Reports and analyses belong in `docs/reports/` (gitignored).
 
 ## Dependencies
 
-- `github.com/mark3labs/mcp-go`: Implementation of the Model Control Protocol
-- `github.com/araddon/dateparse`: Flexible date parsing library
+- `github.com/mark3labs/mcp-go` v1: MCP protocol and transports
+- `github.com/golang-jwt/jwt/v5`: JWT authentication
+- `github.com/araddon/dateparse`: flexible absolute date parsing
 
-## Supported Timezones
+## Supported timezones
 
-The server supports all IANA time zone database entries like:
-- `Europe/Warsaw`
-- `America/New_York`
-- `Asia/Tokyo`
-- `Australia/Sydney`
-- `Africa/Cairo`
-- etc.
-
-## Examples
-
-### Getting Current Time in Tokyo
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "get_current_time",
-    "arguments": {
-      "timezone": "Asia/Tokyo"
-    }
-  }
-}
-```
-
-### Converting Time
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "convert_time",
-    "arguments": {
-      "source_timezone": "Europe/Warsaw",
-      "time": "14:30",
-      "target_timezone": "America/Los_Angeles"
-    }
-  }
-}
-```
-
-## HTTP Transport and CORS
-
-- Run HTTP transport: `go run . --transport=http [--auth-enabled]`
-- Health: `GET /health`, Capabilities: `GET /capabilities`, MCP: `POST {TIME_HTTP_PATH}/*` (default `"/mcp"`)
-
-### CORS Behavior
-
-- Default: CORS is disabled (`TIME_HTTP_CORS_ENABLED=false`).
-- When enabled, no origins are allowed unless explicitly listed in `TIME_HTTP_CORS_ORIGINS`.
-- `TIME_HTTP_CORS_ORIGINS` accepts a comma-separated allowlist. Supported forms:
-  - Hostname: `example.com`
-  - Host:port: `localhost:3000`, `127.0.0.1:8080`
-  - Full URL: `https://app.example.com` (normalized to its host)
-  - Wildcard subdomain: `*.example.com` (matches `example.com` and any subdomain)
-- With `TIME_AUTH_ENABLED=true`, using `*` in `TIME_HTTP_CORS_ORIGINS` is rejected at startup.
-- Preflight and response headers are returned only for allowed origins.
-
-### Configuration Examples
-
-- Development:
-  - `TIME_HTTP_CORS_ENABLED=true`
-  - `TIME_HTTP_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:5173"`
-- Production:
-  - `TIME_HTTP_CORS_ENABLED=true`
-  - `TIME_HTTP_CORS_ORIGINS="https://yourdomain.com,https://app.yourdomain.com,*.trusted-partner.com"`
-  - Avoid `*`; if possible, disable CORS for server-to-server use.
-
-### Environment Variables
-
-- `TIME_HTTP_CORS_ENABLED` (default: `false`)
-- `TIME_HTTP_CORS_ORIGINS` (default: empty, meaning no allowed origins)
-- `TIME_AUTH_ENABLED` (default: `false`)
-- `TIME_AUTH_SECRET_KEY` (required if auth enabled; ≥32 chars)
-- `TIME_HTTP_ADDRESS` (default: `":8080"`)
-- `TIME_HTTP_PATH` (default: `"/mcp"`)
-
-### Quick HTTP Checks
-
-- `curl -i http://localhost:8080/health`
-- With JWT: `curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/capabilities`
+Any IANA timezone identifier works, for example `Europe/Warsaw`,
+`America/New_York`, `Asia/Tokyo`, `Australia/Sydney`, or `Africa/Cairo`.

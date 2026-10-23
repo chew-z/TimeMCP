@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -113,7 +115,7 @@ func parseAuthSettings() (bool, string, string, string, error) {
 		return false, "", "", "", fmt.Errorf("TIME_AUTH_SECRET_KEY is required when TIME_AUTH_ENABLED=true")
 	}
 	if authEnabled && len(authSecretKey) < 32 {
-		fmt.Fprintf(os.Stderr, "[WARN] TIME_AUTH_SECRET_KEY should be at least 32 characters for security\n")
+		slog.Warn("TIME_AUTH_SECRET_KEY should be at least 32 characters for security")
 	}
 	return authEnabled, authSecretKey, authIssuer, authAudience, nil
 }
@@ -150,7 +152,7 @@ func parseCORSOrigins(originsStr string) []string {
 			if err == nil && u.Host != "" {
 				addOrigin(u.Host)
 			} else {
-				fmt.Fprintf(os.Stderr, "[WARN] Invalid CORS origin URL: %q (skipping)\n", trimmed)
+				slog.Warn("invalid CORS origin URL", "origin", trimmed)
 			}
 			continue
 		}
@@ -166,10 +168,8 @@ func parseCORSSettings(authEnabled bool) (bool, []string, error) {
 
 	// Harden: do NOT default to "*"; empty means no origins allowed.
 	if httpCORSEnabled && authEnabled {
-		for _, o := range httpCORSOrigins {
-			if o == "*" {
-				return false, nil, fmt.Errorf("insecure CORS: TIME_HTTP_CORS_ORIGINS contains \"*\" while TIME_AUTH_ENABLED=true")
-			}
+		if slices.Contains(httpCORSOrigins, "*") {
+			return false, nil, fmt.Errorf("insecure CORS: TIME_HTTP_CORS_ORIGINS contains \"*\" while TIME_AUTH_ENABLED=true")
 		}
 	}
 	return httpCORSEnabled, httpCORSOrigins, nil
@@ -182,7 +182,7 @@ func parseTimezoneSettings() (string, error) {
 		if _, err := time.LoadLocation(defaultTimezone); err != nil {
 			return "", fmt.Errorf("invalid TIME_DEFAULT_TIMEZONE: %s (%v)", defaultTimezone, err)
 		}
-		fmt.Fprintf(os.Stderr, "[INFO] Using default timezone: %s\n", defaultTimezone)
+		slog.Info("using default timezone", "timezone", defaultTimezone)
 	}
 	return defaultTimezone, nil
 }
@@ -201,7 +201,7 @@ func parseEnvBool(key string, defaultValue bool) bool {
 		if val, err := strconv.ParseBool(str); err == nil {
 			return val
 		}
-		fmt.Fprintf(os.Stderr, "[WARN] Invalid boolean value for %s: %q. Using default: %t\n", key, str, defaultValue)
+		slog.Warn("invalid boolean env value", "key", key, "value", str, "default", defaultValue)
 	}
 	return defaultValue
 }
@@ -211,7 +211,7 @@ func parseEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		if val, err := time.ParseDuration(str); err == nil {
 			return val
 		}
-		fmt.Fprintf(os.Stderr, "[WARN] Invalid duration value for %s: %q. Using default: %s\n", key, str, defaultValue.String())
+		slog.Warn("invalid duration env value", "key", key, "value", str, "default", defaultValue.String())
 	}
 	return defaultValue
 }
