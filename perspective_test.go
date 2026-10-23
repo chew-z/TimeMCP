@@ -56,6 +56,87 @@ func TestFormatDescribeTimeSingle(t *testing.T) {
 	}
 }
 
+func TestFormatDescribeTimeUsesRequestedZone(t *testing.T) {
+	warsaw, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name          string
+		input         string
+		now           time.Time
+		machine       string
+		humanContains []string
+	}{
+		{
+			name:          "RFC3339 Z input in CEST",
+			input:         "2026-10-22T14:33:57Z",
+			now:           time.Date(2026, 10, 23, 2, 44, 0, 0, warsaw),
+			machine:       "2026-10-22T16:33:57+02:00",
+			humanContains: []string{"yesterday", "4:33 PM"},
+		},
+		{
+			name:          "RFC3339 Z input in CET",
+			input:         "2026-01-09T23:00:00Z",
+			now:           time.Date(2026, 1, 10, 10, 0, 0, 0, warsaw),
+			machine:       "2026-01-10T00:00:00+01:00",
+			humanContains: []string{"today", "12:00 AM"},
+		},
+		{
+			name:          "UTC and Warsaw dates differ near midnight",
+			input:         "2026-10-22T22:30:00Z",
+			now:           time.Date(2026, 10, 23, 10, 0, 0, 0, warsaw),
+			machine:       "2026-10-23T00:30:00+02:00",
+			humanContains: []string{"today", "12:30 AM"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			candidateTime, err := time.Parse(time.RFC3339, tc.input)
+			if err != nil {
+				t.Fatalf("parse input time: %v", err)
+			}
+			out := formatDescribeTime(tc.input, []timeCandidate{{Time: candidateTime, HasTime: true}}, "", tc.now)
+			if !strings.Contains(out, "machine:     "+tc.machine) {
+				t.Errorf("machine line missing %q\nGot:\n%s", tc.machine, out)
+			}
+			for _, want := range tc.humanContains {
+				if !strings.Contains(out, want) {
+					t.Errorf("output missing %q\nGot:\n%s", want, out)
+				}
+			}
+			if tc.name == "UTC and Warsaw dates differ near midnight" && strings.Contains(out, "yesterday") {
+				t.Errorf("human line should say today, not yesterday\nGot:\n%s", out)
+			}
+		})
+	}
+}
+
+func TestFormatDescribeTimeMultiUsesRequestedZone(t *testing.T) {
+	warsaw, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 23, 10, 0, 0, 0, warsaw)
+	inputTime, err := time.Parse(time.RFC3339, "2026-10-22T22:30:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []timeCandidate{
+		{Label: "first", Time: inputTime, HasTime: true},
+		{Label: "second", Time: inputTime.Add(time.Hour), HasTime: true},
+	}
+
+	out := formatDescribeTime("ambiguous", candidates, "ambiguous", now)
+	for _, machine := range []string{"2026-10-23T00:30:00+02:00", "2026-10-23T01:30:00+02:00"} {
+		if !strings.Contains(out, machine) {
+			t.Errorf("output missing machine timestamp %q\nGot:\n%s", machine, out)
+		}
+	}
+}
+
 func TestFormatDescribeTimeAmbiguous(t *testing.T) {
 	loc, _ := time.LoadLocation("America/New_York")
 	now := time.Date(2026, 7, 9, 21, 8, 0, 0, loc)

@@ -69,6 +69,8 @@ func formatDescribeTime(input string, candidates []timeCandidate, ambNote string
 }
 
 func formatSingle(input string, c timeCandidate, now time.Time) string {
+	// Inputs can carry their own offset (for example RFC 3339 `Z`), so render in the requested zone.
+	c.Time = c.Time.In(now.Location())
 	var b strings.Builder
 	fmt.Fprintf(&b, "input:       %q\n", input)
 	fmt.Fprintf(&b, "machine:     %s\n", c.Time.Format(time.RFC3339))
@@ -83,6 +85,8 @@ func formatMulti(input string, candidates []timeCandidate, ambNote string, now t
 	fmt.Fprintf(&b, "input:       %q\n", input)
 	fmt.Fprintf(&b, "status:      %s\n", ambNote)
 	for i, c := range candidates {
+		// Inputs can carry their own offset (for example RFC 3339 `Z`), so render in the requested zone.
+		c.Time = c.Time.In(now.Location())
 		b.WriteByte('\n')
 		if c.Label != "" {
 			fmt.Fprintf(&b, "candidate %d (%s):\n", i+1, c.Label)
@@ -155,7 +159,6 @@ func dir(future bool, futureStr, pastStr string) string {
 }
 
 func perspectivePhrase(t, now time.Time, hasTime bool) string {
-	t = t.In(now.Location())
 	if t.Equal(now) {
 		return "right now"
 	}
