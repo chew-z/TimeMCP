@@ -11,7 +11,7 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 	secret := "test-secret"
-	auth, err := NewAuthMiddleware(secret, true, "test-issuer", "test-audience")
+	auth, err := NewAuthMiddleware(secret, true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	// Generate a token with a different secret
-	auth2, err := NewAuthMiddleware("different-secret", true, "test-issuer", "test-audience")
+	auth2, err := NewAuthMiddleware("different-secret", true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestAuthMiddleware(t *testing.T) {
 func TestAuthMiddleware_Disabled(t *testing.T) {
 	secret := "test-secret"
 	// Auth middleware is disabled
-	auth, err := NewAuthMiddleware(secret, false, "test-issuer", "test-audience")
+	auth, err := NewAuthMiddleware(secret, false, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestAuthMiddleware_Disabled(t *testing.T) {
 
 func TestGenerateAndValidateToken(t *testing.T) {
 	secret := "test-secret"
-	auth, err := NewAuthMiddleware(secret, true, "test-issuer", "test-audience")
+	auth, err := NewAuthMiddleware(secret, true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
@@ -190,11 +190,11 @@ func TestGenerateAndValidateToken(t *testing.T) {
 }
 
 func TestValidateJWT_InvalidSignature(t *testing.T) {
-	auth1, err := NewAuthMiddleware("secret1", true, "test-issuer", "test-audience")
+	auth1, err := NewAuthMiddleware("secret1", true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
-	auth2, err := NewAuthMiddleware("secret2", true, "test-issuer", "test-audience")
+	auth2, err := NewAuthMiddleware("secret2", true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestValidateJWT_InvalidSignature(t *testing.T) {
 }
 
 func TestValidateJWT_ExpiredToken(t *testing.T) {
-	auth, err := NewAuthMiddleware("secret", true, "test-issuer", "test-audience")
+	auth, err := NewAuthMiddleware("secret", true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestValidateJWT_ExpiredToken(t *testing.T) {
 }
 
 func TestValidateJWT_MissingClaims(t *testing.T) {
-	auth, err := NewAuthMiddleware("secret", true, "test-issuer", "test-audience")
+	auth, err := NewAuthMiddleware("secret", true, "test-issuer", "test-audience", nil)
 	if err != nil {
 		t.Fatalf("Failed to create auth middleware: %v", err)
 	}

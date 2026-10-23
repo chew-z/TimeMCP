@@ -38,6 +38,12 @@ func main() {
 func run() error {
 	opts := parseFlags()
 
+	if opts.GenerateToken && opts.HashPassword {
+		return fmt.Errorf("-generate-token and -hash-password cannot be used together")
+	}
+	if opts.HashPassword {
+		return runHashPassword(os.Stdin, os.Stdout, os.Stderr)
+	}
 	if opts.GenerateToken {
 		secretKey := os.Getenv("TIME_AUTH_SECRET_KEY")
 		return CreateTokenCommand(secretKey, opts.TokenUserID, opts.TokenUsername, opts.TokenRole, opts.TokenExpirationHours)
@@ -70,6 +76,7 @@ type cliOptions struct {
 	Transport            string
 	AuthEnabled          bool
 	GenerateToken        bool
+	HashPassword         bool
 	TokenUserID          string
 	TokenUsername        string
 	TokenRole            string
@@ -81,6 +88,7 @@ func parseFlags() cliOptions {
 	flag.StringVar(&opts.Transport, "transport", "stdio", "Transport mode: 'stdio' (default) or 'http'")
 	flag.BoolVar(&opts.AuthEnabled, "auth-enabled", false, "Enable JWT authentication for HTTP transport")
 	flag.BoolVar(&opts.GenerateToken, "generate-token", false, "Generate a JWT token and exit")
+	flag.BoolVar(&opts.HashPassword, "hash-password", false, "Read a password from stdin, print its PBKDF2 hash for TIME_OAUTH_LOGIN_PASSWORD_HASH, and exit")
 	flag.StringVar(&opts.TokenUserID, "token-user-id", "user1", "User ID for token generation")
 	flag.StringVar(&opts.TokenUsername, "token-username", "admin", "Username for token generation")
 	flag.StringVar(&opts.TokenRole, "token-role", "admin", "Role for token generation")

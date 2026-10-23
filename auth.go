@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"TimeMCP/internal/oauth"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mark3labs/mcp-go/server"
@@ -41,6 +44,7 @@ type AuthMiddleware struct {
 	enabled   bool
 	issuer    string
 	audience  string
+	oauthCfg  *oauth.Config
 }
 
 // Claims represents JWT token claims
@@ -49,10 +53,41 @@ type Claims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
+	Scope    string `json:"scope,omitempty"`
+}
+
+const oauthRole = "oauth"
+
+// HS256Signer signs OAuth access tokens with the existing authentication claims.
+type HS256Signer struct{ Secret, Issuer, Audience string }
+
+var _ oauth.Signer = HS256Signer{}
+
+// Sign mints an HS256 OAuth token carrying the claims required by TimeMCP authentication.
+func (s HS256Signer) Sign(username, scope string, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		return "", fmt.Errorf("signing OAuth access token: TTL must be positive")
+	}
+	now := time.Now()
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    s.Issuer,
+			Audience:  jwt.ClaimStrings{s.Audience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		},
+		UserID: username, Username: username, Role: oauthRole, Scope: scope,
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.Secret))
+	if err != nil {
+		return "", fmt.Errorf("signing OAuth access token: %w", err)
+	}
+	return token, nil
 }
 
 // NewAuthMiddleware creates a new authentication middleware
-func NewAuthMiddleware(secretKey string, enabled bool, issuer string, audience string) (*AuthMiddleware, error) {
+func NewAuthMiddleware(secretKey string, enabled bool, issuer string, audience string, oauthCfg *oauth.Config) (*AuthMiddleware, error) {
 	if enabled && secretKey == "" {
 		return nil, fmt.Errorf("auth enabled but secret key is empty")
 	}
@@ -61,6 +96,7 @@ func NewAuthMiddleware(secretKey string, enabled bool, issuer string, audience s
 		enabled:   enabled,
 		issuer:    issuer,
 		audience:  audience,
+		oauthCfg:  oauthCfg,
 	}, nil
 }
 
@@ -108,19 +144,43 @@ func (a *AuthMiddleware) HTTPContextFunc(next httpMiddleware) httpMiddleware {
 	}
 }
 
-// validateJWT validates a JWT token and returns the claims
+// errInsufficientScope identifies a valid OAuth token that lacks the configured scope.
+var errInsufficientScope = errors.New("insufficient scope")
+
+// validateJWT first applies the unchanged static profile, then the optional OAuth
+// profile. OAuth tokens additionally require expiration and an exact scope match.
 func (a *AuthMiddleware) validateJWT(tokenString string) (*Claims, error) {
+	claims, err := a.validateJWTProfile(tokenString, a.issuer, a.audience, false)
+	if err == nil || a.oauthCfg == nil {
+		return claims, err
+	}
+	claims, err = a.validateJWTProfile(tokenString, a.oauthCfg.Issuer, a.oauthCfg.Resource, true)
+	if err != nil {
+		return nil, err
+	}
+	if claims.Scope != a.oauthCfg.Scope {
+		return nil, errInsufficientScope
+	}
+	return claims, nil
+}
+
+// validateJWTProfile verifies the signature, registered claims, and identity for one profile.
+func (a *AuthMiddleware) validateJWTProfile(tokenString, issuer, audience string, requireExpiration bool) (*Claims, error) {
+	opts := []jwt.ParserOption{
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
+		jwt.WithLeeway(60 * time.Second),
+		jwt.WithValidMethods([]string{"HS256"}),
+	}
+	if requireExpiration {
+		opts = append(opts, jwt.WithExpirationRequired())
+	}
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return a.secretKey, nil
-	},
-		jwt.WithIssuer(a.issuer),
-		jwt.WithAudience(a.audience),
-		jwt.WithLeeway(60*time.Second),
-		jwt.WithValidMethods([]string{"HS256"}),
-	)
+	}, opts...)
 
 	if err != nil {
 		return nil, err
@@ -134,6 +194,48 @@ func (a *AuthMiddleware) validateJWT(tokenString string) (*Claims, error) {
 	}
 
 	return nil, fmt.Errorf("invalid token")
+}
+
+// protectMCP sends OAuth discovery challenges before mcp-go handles requests.
+// It is installed only with OAuth configured; OPTIONS bypasses authentication.
+func (a *AuthMiddleware) protectMCP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+		parts := strings.Fields(r.Header.Get("Authorization"))
+		var err error
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			err = errors.New("missing or malformed bearer authorization")
+		} else {
+			_, err = a.validateJWT(parts[1])
+		}
+		if err == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		status, challengeError, bodyError := http.StatusUnauthorized, "invalid_token", "unauthorized"
+		if errors.Is(err, errInsufficientScope) {
+			status, challengeError, bodyError = http.StatusForbidden, "insufficient_scope", "insufficient_scope"
+		}
+		slog.Debug("MCP authentication rejected", "remote_addr", r.RemoteAddr, "error", err)
+		a.writeChallenge(w, challengeError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": bodyError}); err != nil {
+			slog.Warn("writing authentication error response", "error", err)
+		}
+	})
+}
+
+// writeChallenge advertises the OAuth protected-resource metadata and required scope.
+func (a *AuthMiddleware) writeChallenge(w http.ResponseWriter, code string) {
+	metadataURL := oauth.IssuerOrigin(a.oauthCfg.Issuer) + oauth.ProtectedResourceMetadataPath(a.oauthCfg.Resource)
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+		"Bearer realm=%q, error=%q, resource_metadata=%q, scope=%q",
+		a.oauthCfg.Realm, code, metadataURL, a.oauthCfg.Scope,
+	))
 }
 
 // GenerateToken generates a JWT token for a user (utility function for testing/setup)
@@ -190,7 +292,7 @@ func CreateTokenCommand(secretKey, userID, username, role string, expirationHour
 		return errors.New("TIME_AUTH_SECRET_KEY environment variable is required")
 	}
 
-	auth, err := NewAuthMiddleware(secretKey, true, "TimeMCP", "TimeMCP-user")
+	auth, err := NewAuthMiddleware(secretKey, true, "TimeMCP", "TimeMCP-user", nil)
 	if err != nil {
 		return fmt.Errorf("creating auth middleware: %w", err)
 	}
@@ -211,12 +313,12 @@ func CreateTokenCommand(secretKey, userID, username, role string, expirationHour
 	return nil
 }
 
-func createHTTPMiddleware(config *Config) (server.HTTPContextFunc, error) {
+func createHTTPMiddleware(config *Config, oauthCfg *oauth.Config) (server.HTTPContextFunc, error) {
 	// Create authentication middleware
 	var authMiddleware *AuthMiddleware
 	if config.AuthEnabled {
 		var err error
-		authMiddleware, err = NewAuthMiddleware(config.AuthSecretKey, config.AuthEnabled, config.AuthIssuer, config.AuthAudience)
+		authMiddleware, err = NewAuthMiddleware(config.AuthSecretKey, config.AuthEnabled, config.AuthIssuer, config.AuthAudience, oauthCfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create auth middleware: %w", err)
 		}

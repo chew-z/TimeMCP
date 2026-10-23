@@ -14,6 +14,9 @@ It targets Go 1.27 and is built on `github.com/mark3labs/mcp-go` v1, and impleme
   Supports both absolute dates and relative phrases (tomorrow, next Tuesday, in 2 hours, etc.).
   Ambiguous inputs return labeled candidates.
 
+The opt-in OAuth 2.1 authorization server lives in `internal/oauth/`,
+ported from Answer/Pushover/Alerts; `cli_password.go` provides password hashing.
+
 ## Development Commands
 
 ### Build and Run
@@ -66,6 +69,9 @@ Update it when a tool changes.
   HTTP transport in `http_server.go`, authentication and CORS origin matching in `auth.go`,
   configuration in `config.go`, the `describe_time` handler in `describe_time.go`,
   its parser in `flexible_parse.go`, and its prose renderer in `perspective.go`
+- **OAuth connector auth**: `internal/oauth/` provides the OAuth 2.1 server,
+  ported from Answer/Pushover/Alerts; `cli_password.go` reads passwords and
+  prints PBKDF2 hashes for operator configuration
 - **Dual Transport Support**: Both stdio and HTTP transports
 - **Tool Handlers**: Each tool receives `mcp.CallToolRequest` and returns `mcp.CallToolResult`
 
@@ -74,6 +80,7 @@ Update it when a tool changes.
 - `github.com/mark3labs/mcp-go/mcp` (v1): MCP protocol implementation
 - `github.com/golang-jwt/jwt/v5`: JWT authentication for the HTTP transport
 - `github.com/araddon/dateparse`: Flexible date parsing
+- `golang.org/x/term`: Echo-free password input for `--hash-password`
 - Standard library `time` package for timezone operations
 - Standard library `log/slog` for structured logging
 
@@ -89,7 +96,7 @@ Update it when a tool changes.
 
 - RESTful HTTP endpoints with JSON responses
 - Supports CORS for web applications
-- Optional JWT-based authentication
+- Optional JWT-based authentication and opt-in OAuth 2.1 connector login
 - Health endpoint (`GET /health`); tool discovery uses MCP `tools/list`
 - Graceful shutdown driven by `signal.NotifyContext`
 
@@ -145,6 +152,17 @@ Environment Variables
   - `TIME_AUTH_ISSUER="TimeMCP"` (default: `TimeMCP`)
   - `TIME_AUTH_AUDIENCE="TimeMCP-user"` (default: `TimeMCP-user`)
 
+- OAuth:
+  - `TIME_OAUTH_ENABLED=true|false` (default: `false`)
+  - `TIME_OAUTH_ISSUER="https://karma.example/time"` (required when enabled)
+  - `TIME_OAUTH_RESOURCE="https://karma.example/time/mcp"` (public MCP URL;
+    required when enabled, independent of local `TIME_HTTP_PATH`)
+  - `TIME_OAUTH_LOGIN_USER="tester"` (required when enabled)
+  - `TIME_OAUTH_LOGIN_PASSWORD_HASH="..."` (from `--hash-password`;
+    required when enabled)
+  - `TIME_OAUTH_ACCESS_TTL="1h"` (default: `1h`)
+  - `TIME_OAUTH_REFRESH_TTL="720h"` (default: `720h`; must exceed access TTL)
+
 ### JWT Authentication
 
 #### Generate Token
@@ -164,10 +182,38 @@ go run . --generate-token --token-user-id="user123" --token-username="john" --to
 curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/mcp
 ```
 
+### OAuth connector
+
+OAuth is opt-in via `TIME_OAUTH_ENABLED=true` and forces authentication on.
+`TIME_AUTH_SECRET_KEY` must be at least 32 bytes when OAuth is enabled.
+Invalid OAuth settings fail startup; empty booleans and TTLs use defaults.
+The CORS wildcard rejection also applies when OAuth enables authentication.
+Missing or invalid MCP tokens receive HTTP 401 plus `WWW-Authenticate`
+with `resource_metadata` so connectors can discover the login flow.
+Wrong OAuth scope receives HTTP 403 `insufficient_scope`.
+Static JWTs remain accepted; with OAuth off, tool authentication keeps its
+existing MCP tool-error behavior.
+
+Generate the login password hash before configuring the server:
+
+```bash
+go run . --hash-password
+```
+
+OAuth clients, codes, and refresh tokens live in memory, so a restart requires
+fresh connector login; static tokens keep working with unchanged auth settings.
+For connector setup and nginx route forwarding, see the README OAuth subsection.
+
 ### HTTP Endpoints
 
 - `GET /health` - Health check endpoint
 - `POST /mcp` - Streamable HTTP MCP endpoint (configurable via `TIME_HTTP_PATH`)
+- OAuth discovery (mounted only when OAuth is enabled):
+  - `GET /.well-known/oauth-protected-resource` and its resource-path suffix
+  - `GET /.well-known/oauth-authorization-server` and its issuer-path suffix
+- OAuth endpoints: `GET /authorize`, `POST /login`, `POST /token`, and
+  `POST /register` (dynamic client registration; authorization uses PKCE S256)
+- `/health` remains unauthenticated in all modes
 
 ## CORS Security Configuration
 
@@ -235,10 +281,13 @@ go run .
 
 ## Testing Strategy
 
-Two layers:
+Three layers:
 
 - **Unit tests** (`*_test.go`) cover parsing, formatting, CORS, and JWT validation.
   Run them with `task test` or `go test -race ./...`; `task check` includes them.
+- **OAuth integration** (`oauth_e2e_test.go`) covers the full DCR → authorize →
+  login → token → MCP tools call over `httptest`, plus refresh, static JWT
+  fallback, and discovery documents.
 - **Smoke test** (`examples/test_client.go`) checks the legacy `2025-11-25`
   initialize handshake and exercises MCP `2026-07-28` over stdio only
   (`server/discover`, `tools/list`, `tools/call`) with `_meta`.

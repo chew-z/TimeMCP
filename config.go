@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"TimeMCP/internal/oauth"
 )
 
 // Default configuration values
@@ -56,6 +58,15 @@ type Config struct {
 	AuthIssuer    string
 	AuthAudience  string
 
+	// OAuth settings
+	OAuthEnabled           bool
+	OAuthIssuer            string
+	OAuthResource          string
+	OAuthLoginUser         string
+	OAuthLoginPasswordHash string
+	OAuthAccessTTL         time.Duration
+	OAuthRefreshTTL        time.Duration
+
 	// Timezone settings
 	DefaultTimezone string
 }
@@ -67,6 +78,23 @@ func NewConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	cfg := &Config{}
+	if err = parseOAuthSettings(cfg); err != nil {
+		return nil, fmt.Errorf("parsing OAuth settings: %w", err)
+	}
+	if cfg.OAuthEnabled {
+		authEnabled = true
+		if authSecretKey == "" {
+			return nil, fmt.Errorf("TIME_AUTH_SECRET_KEY is required when TIME_OAUTH_ENABLED=true")
+		}
+		if len(authSecretKey) < 32 {
+			return nil, fmt.Errorf("TIME_AUTH_SECRET_KEY must be at least 32 bytes when TIME_OAUTH_ENABLED=true")
+		}
+		cfg.AuthSecretKey = authSecretKey
+		if _, err = cfg.OAuthConfig(); err != nil {
+			return nil, fmt.Errorf("validating OAuth settings: %w", err)
+		}
+	}
 	httpCORSEnabled, httpCORSOrigins, err := parseCORSSettings(authEnabled)
 	if err != nil {
 		return nil, err
@@ -76,22 +104,105 @@ func NewConfig() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{
-		HTTPAddress:                    httpAddress,
-		HTTPPath:                       httpPath,
-		HTTPStateless:                  httpStateless,
-		HTTPHeartbeat:                  httpHeartbeat,
-		HTTPTimeout:                    httpTimeout,
-		HTTPCORSEnabled:                httpCORSEnabled,
-		HTTPCORSOrigins:                httpCORSOrigins,
-		HTTPSessionIdleTTL:             httpSessionIdleTTL,
-		HTTPDisableLocalhostProtection: httpDisableLocalhostProtection,
-		AuthEnabled:                    authEnabled,
-		AuthSecretKey:                  authSecretKey,
-		AuthIssuer:                     authIssuer,
-		AuthAudience:                   authAudience,
-		DefaultTimezone:                defaultTimezone,
-	}, nil
+	cfg.HTTPAddress = httpAddress
+	cfg.HTTPPath = httpPath
+	cfg.HTTPStateless = httpStateless
+	cfg.HTTPHeartbeat = httpHeartbeat
+	cfg.HTTPTimeout = httpTimeout
+	cfg.HTTPCORSEnabled = httpCORSEnabled
+	cfg.HTTPCORSOrigins = httpCORSOrigins
+	cfg.HTTPSessionIdleTTL = httpSessionIdleTTL
+	cfg.HTTPDisableLocalhostProtection = httpDisableLocalhostProtection
+	cfg.AuthEnabled = authEnabled
+	cfg.AuthSecretKey = authSecretKey
+	cfg.AuthIssuer = authIssuer
+	cfg.AuthAudience = authAudience
+	cfg.DefaultTimezone = defaultTimezone
+	return cfg, nil
+}
+
+// parseOAuthSettings reads opt-in OAuth settings without changing the legacy parsers.
+func parseOAuthSettings(c *Config) error {
+	enabled, err := parseStrictEnvBool("TIME_OAUTH_ENABLED", false)
+	if err != nil {
+		return err
+	}
+	c.OAuthEnabled = enabled
+	c.OAuthIssuer = os.Getenv("TIME_OAUTH_ISSUER")
+	c.OAuthResource = os.Getenv("TIME_OAUTH_RESOURCE")
+	c.OAuthLoginUser = os.Getenv("TIME_OAUTH_LOGIN_USER")
+	c.OAuthLoginPasswordHash = os.Getenv("TIME_OAUTH_LOGIN_PASSWORD_HASH")
+	c.OAuthAccessTTL, err = parseStrictEnvDuration("TIME_OAUTH_ACCESS_TTL", time.Hour)
+	if err != nil {
+		return err
+	}
+	c.OAuthRefreshTTL, err = parseStrictEnvDuration("TIME_OAUTH_REFRESH_TTL", 720*time.Hour)
+	return err
+}
+
+// OAuthConfig builds and validates the OAuth authorization-server settings.
+func (c *Config) OAuthConfig() (oauth.Config, error) {
+	for _, setting := range []struct{ name, value string }{
+		{"TIME_OAUTH_ISSUER", c.OAuthIssuer},
+		{"TIME_OAUTH_RESOURCE", c.OAuthResource},
+		{"TIME_OAUTH_LOGIN_USER", c.OAuthLoginUser},
+		{"TIME_OAUTH_LOGIN_PASSWORD_HASH", c.OAuthLoginPasswordHash},
+	} {
+		if setting.value == "" {
+			return oauth.Config{}, fmt.Errorf("%s is required when OAuth is enabled", setting.name)
+		}
+	}
+	for _, setting := range []struct {
+		name  string
+		value time.Duration
+	}{
+		{"TIME_OAUTH_ACCESS_TTL", c.OAuthAccessTTL},
+		{"TIME_OAUTH_REFRESH_TTL", c.OAuthRefreshTTL},
+	} {
+		if setting.value <= 0 {
+			return oauth.Config{}, fmt.Errorf("%s must be positive", setting.name)
+		}
+	}
+	cfg := oauth.Config{
+		Issuer: c.OAuthIssuer, Resource: c.OAuthResource,
+		LoginUser: c.OAuthLoginUser, LoginPasswordHash: c.OAuthLoginPasswordHash,
+		AccessTokenTTL: c.OAuthAccessTTL, RefreshTokenTTL: c.OAuthRefreshTTL,
+		Signer: HS256Signer{Secret: c.AuthSecretKey, Issuer: c.OAuthIssuer, Audience: c.OAuthResource},
+	}
+	if err := cfg.Validate(); err != nil {
+		return oauth.Config{}, fmt.Errorf(
+			"validating OAuth config (TIME_OAUTH_ISSUER, TIME_OAUTH_RESOURCE, "+
+				"TIME_OAUTH_LOGIN_PASSWORD_HASH, TIME_OAUTH_ACCESS_TTL, TIME_OAUTH_REFRESH_TTL): %w",
+			err,
+		)
+	}
+	return cfg, nil
+}
+
+// parseStrictEnvBool uses the fallback for unset or empty values and rejects invalid nonempty values.
+func parseStrictEnvBool(key string, fallback bool) (bool, error) {
+	value, present := os.LookupEnv(key)
+	if !present || value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s: invalid boolean: %w", key, err)
+	}
+	return parsed, nil
+}
+
+// parseStrictEnvDuration uses the fallback for unset or empty values and rejects invalid nonempty values.
+func parseStrictEnvDuration(key string, fallback time.Duration) (time.Duration, error) {
+	value, present := os.LookupEnv(key)
+	if !present || value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s: invalid duration: %w", key, err)
+	}
+	return parsed, nil
 }
 
 func parseHTTPSettings() (string, string, bool, time.Duration, time.Duration, time.Duration, bool) {

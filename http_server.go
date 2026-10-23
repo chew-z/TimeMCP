@@ -13,12 +13,14 @@ import (
 	"syscall"
 	"time"
 
+	"TimeMCP/internal/oauth"
+
 	"github.com/mark3labs/mcp-go/server"
 )
 
 const readHeaderTimeout = 10 * time.Second
 
-func createHTTPServerOptions(config *Config) ([]server.StreamableHTTPOption, error) {
+func createHTTPServerOptions(config *Config, oauthCfg *oauth.Config) ([]server.StreamableHTTPOption, error) {
 	var opts []server.StreamableHTTPOption
 
 	if config.HTTPHeartbeat > 0 {
@@ -40,7 +42,7 @@ func createHTTPServerOptions(config *Config) ([]server.StreamableHTTPOption, err
 	}
 
 	if config.HTTPCORSEnabled || config.AuthEnabled {
-		httpContextFunc, err := createHTTPMiddleware(config)
+		httpContextFunc, err := createHTTPMiddleware(config, oauthCfg)
 		if err != nil {
 			return nil, err
 		}
@@ -53,7 +55,7 @@ func createHTTPServerOptions(config *Config) ([]server.StreamableHTTPOption, err
 func createCustomHTTPServer(httpServer http.Handler, config *Config) *http.Server {
 	return &http.Server{
 		Addr:              config.HTTPAddress,
-		Handler:           createCustomHTTPHandler(httpServer, config),
+		Handler:           httpServer,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       config.HTTPTimeout,
 		WriteTimeout:      config.HTTPTimeout,
@@ -90,26 +92,46 @@ func handleGracefulShutdown(server *http.Server, config *Config) error {
 	}
 }
 
-// startHTTPServer starts the HTTP transport server
+// startHTTPServer starts the HTTP transport server.
 func startHTTPServer(mcpServer *server.MCPServer, config *Config) error {
-	opts, err := createHTTPServerOptions(config)
+	handler, err := buildHTTPHandler(mcpServer, config)
 	if err != nil {
 		return err
 	}
-
-	httpServer := server.NewStreamableHTTPServer(mcpServer, opts...)
-	customServer := createCustomHTTPServer(httpServer, config)
-
-	return handleGracefulShutdown(customServer, config)
+	return handleGracefulShutdown(createCustomHTTPServer(handler, config), config)
 }
 
-func createCustomHTTPHandler(mcpHandler http.Handler, config *Config) http.Handler {
+// buildHTTPHandler assembles the MCP transport, public health endpoint, and optional OAuth routes.
+func buildHTTPHandler(mcpServer *server.MCPServer, config *Config) (http.Handler, error) {
+	var oauthCfg *oauth.Config
+	if config.OAuthEnabled {
+		derived, err := config.OAuthConfig()
+		if err != nil {
+			return nil, fmt.Errorf("building OAuth configuration: %w", err)
+		}
+		oauthCfg = &derived
+	}
+	opts, err := createHTTPServerOptions(config, oauthCfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating HTTP server options: %w", err)
+	}
+	var mcpHandler http.Handler = server.NewStreamableHTTPServer(mcpServer, opts...)
+	if oauthCfg != nil {
+		guard, err := NewAuthMiddleware(config.AuthSecretKey, config.AuthEnabled, config.AuthIssuer, config.AuthAudience, oauthCfg)
+		if err != nil {
+			return nil, fmt.Errorf("creating OAuth HTTP guard: %w", err)
+		}
+		mcpHandler = guard.protectMCP(mcpHandler)
+	}
 	mux := http.NewServeMux()
-
 	addHealthEndpoint(mux, config)
+	// CORS stays outside the guard so allowed origins receive headers on auth errors.
 	addCORSHandler(mux, mcpHandler, config)
-
-	return mux
+	if oauthCfg != nil {
+		oauth.Mount(mux, *oauthCfg, oauth.NewStore(nil), slog.Default())
+		slog.Info("OAuth mounted", "issuer", oauthCfg.Issuer, "resource", oauthCfg.Resource)
+	}
+	return mux, nil
 }
 
 func addHealthEndpoint(mux *http.ServeMux, config *Config) {

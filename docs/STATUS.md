@@ -15,6 +15,7 @@ tags: [status, go, mcp]
 | `github.com/mark3labs/mcp-go` | v1.3.0 |
 | `github.com/golang-jwt/jwt/v5` | v5.3.1 |
 | `github.com/araddon/dateparse` | v0.0.0-20210429162001-6b43995a97de |
+| `golang.org/x/term` | v0.47.0 (`golang.org/x/sys` v0.49.0 indirect) |
 | golangci-lint | default configuration (`run_lint.sh`), 0 issues |
 
 ## Health
@@ -29,6 +30,23 @@ tags: [status, go, mcp]
 - Deployment health is not monitored from this repository; the process runs behind nginx.
 
 ## Recent changes
+
+### 2026-10-23 — OAuth 2.1 connector auth (issue #2)
+
+- Ported `internal/oauth/` from Answer/Pushover/Alerts with TimeMCP identity,
+  scope `time`, and realm `time-mcp`.
+- Added opt-in `TIME_OAUTH_*` settings for public issuer/resource URLs, login
+  credentials, and access/refresh TTLs (1h/720h).
+  OAuth forces authentication on and requires a signing secret of at least
+  32 bytes; invalid settings and authenticated CORS wildcards fail startup.
+- Added HTTP 401 discovery challenges and 403 insufficient-scope responses
+  when OAuth is on; static JWTs and the OAuth-off tool-error path still work.
+  Health and OAuth routes bypass the MCP guard.
+- Added `--hash-password` for PBKDF2 login hashes with terminal echo suppressed.
+- Added `golang.org/x/term` v0.47.0 and `golang.org/x/sys` v0.49.0 indirect.
+- Added package, config, signer, HTTP guard, password CLI, and OAuth end-to-end
+  tests covering login, PKCE, token refresh, discovery, and MCP tool calls.
+  `go vet ./...` and `go test -count=1 -race ./...` pass.
 
 ### 2026-10-23 — smoke client protocol update
 
@@ -54,5 +72,8 @@ tags: [status, go, mcp]
 
 ## Next checkpoint
 
+- Deploy with `TIME_OAUTH_*` set and register the claude.ai custom connector.
+  nginx must forward the OAuth authorization routes and well-known discovery
+  paths as well as the MCP endpoint.
 - Re-run `task check` after any dependency change.
 - Add an HTTP integration test for the streamable endpoint and `/health`.

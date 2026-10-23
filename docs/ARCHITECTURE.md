@@ -51,6 +51,10 @@ All handlers return `*mcp.CallToolResult`; user-facing failures use `mcp.NewTool
 `NewConfig` in `config.go` reads the environment once at startup.
 An invalid `TIME_DEFAULT_TIMEZONE` or `*` in `TIME_HTTP_CORS_ORIGINS` with auth enabled fails fast.
 The full variable table lives in `README.md`.
+`TIME_OAUTH_ENABLED` opts into `internal/oauth/`; OAuth settings are parsed
+before CORS, force authentication on, and require a secret of at least 32 bytes.
+`OAuthConfig()` validates public issuer/resource URLs, login credentials, and
+access/refresh TTLs; invalid OAuth settings fail startup.
 
 ## Transports
 
@@ -63,7 +67,17 @@ No authentication is applied.
 
 `server.NewStreamableHTTPServer` is mounted in a custom `http.ServeMux` that also serves `GET /health`.
 The CORS wrapper is installed only when `TIME_HTTP_CORS_ENABLED=true`.
-JWT validation happens in the HTTP context function; tool middleware rejects unauthenticated calls.
+With OAuth off, JWT validation happens in the HTTP context function;
+tool middleware returns the existing MCP error for unauthenticated calls.
+With OAuth on, `buildHTTPHandler` assembles the flow:
+CORS → OAuth guard → mcp-go → context auth → tool auth middleware.
+The guard returns 401 with a resource-metadata challenge, or 403 for wrong scope;
+both static and OAuth JWT profiles reach the same context/tool authentication.
+`internal/oauth/` mounts discovery, authorize, login, token, and registration
+routes on the same mux; those routes and `/health` bypass the MCP guard.
+OAuth state is in memory, so restarts require fresh connector login.
+nginx must forward well-known paths and issuer-prefixed OAuth routes as well
+as the MCP endpoint.
 Shutdown is driven by `signal.NotifyContext` with `TIME_HTTP_TIMEOUT` as the deadline.
 `ReadHeaderTimeout` is fixed at 10 seconds.
 
